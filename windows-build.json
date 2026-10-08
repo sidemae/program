@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "status": "passed",
-  "version": "1.1.0",
-  "source_commit": "4529fc971834f298655dc20a12ced1640f6a93d0",
-  "run_url": "https://github.com/sidemae/program/actions/runs/37718413088",
+  "version": "1.1.1",
+  "source_commit": "48ca1984d0a989d0d7ed900602d0c4d58749c577",
+  "run_url": "https://github.com/sidemae/program/actions/runs/37720762108",
   "runner": {
     "platform": "Windows",
     "architecture": "AMD64",
@@ -17,14 +17,17 @@
     },
     "gui": {
       "status": "passed",
-      "count": 50
+      "count": 55
     },
     "launcher": {
       "status": "passed",
       "checks": [
         "mixed default states and image-only canvas",
+        "initial original artwork is pixel-identical",
+        "all twenty actual source body coordinates click independently",
         "pictured lever opens green parallel",
         "pictured lever closes red perpendicular",
+        "user ID and description edits preserve geometry and reject duplicate IDs",
         "Pillow PNG decoding and transparency",
         "embedded image and state project roundtrip"
       ]
@@ -32,15 +35,18 @@
     "build": {
       "status": "passed",
       "name": "ValveControl.exe",
-      "bytes": 21482581,
-      "sha256": "83d90c043ea0cae24be51a60180e47cfda003bb97ab428bcf6047700af2cc64c"
+      "bytes": 21708764,
+      "sha256": "237b976bd86a973a22fd0dc488c310b57f025651cecdb4062590a0e3fc25d1a6"
     },
     "exe_smoke": {
       "status": "passed",
       "checks": [
         "mixed default states and image-only canvas",
+        "initial original artwork is pixel-identical",
+        "all twenty actual source body coordinates click independently",
         "pictured lever opens green parallel",
         "pictured lever closes red perpendicular",
+        "user ID and description edits preserve geometry and reject duplicate IDs",
         "Pillow PNG decoding and transparency",
         "embedded image and state project roundtrip"
       ],
@@ -49,17 +55,17 @@
     },
     "package": {
       "status": "passed",
-      "name": "valve-control-windows-1.1.0.zip",
-      "bytes": 21217147,
-      "sha256": "fad67f951f43d59fc40a36220ffaa6fb2512326e1d957a0139478eac1c39c216"
+      "name": "valve-control-windows-1.1.1.zip",
+      "bytes": 21443689,
+      "sha256": "b26d1535b7f91e70d9ae978745367edce933c9921805f379c8c882d2f6d1ee57"
     }
   },
   "archive": {
-    "name": "valve-control-windows-1.1.0.zip",
-    "bytes": 21217147,
-    "sha256": "fad67f951f43d59fc40a36220ffaa6fb2512326e1d957a0139478eac1c39c216"
+    "name": "valve-control-windows-1.1.1.zip",
+    "bytes": 21443689,
+    "sha256": "b26d1535b7f91e70d9ae978745367edce933c9921805f379c8c882d2f6d1ee57"
   },
-  "completed_at_utc": "2026-10-08T02:34:02.831320+00:00",
+  "completed_at_utc": "2026-10-08T03:03:13.200164+00:00",
   "workflow_steps": {
     "dependencies": "success",
     "build": "success"
