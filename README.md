@@ -29,6 +29,9 @@ Python 3.11 이상을 설치한 뒤 소스 ZIP을 모두 압축 해제하고 `va
 
 Linux에서 실제 GUI 검사 55개를 통과했습니다. 원본 PDF 도면의 로딩, 실제 손잡이 색·방향 전환, 이미지 외곽 보존, 원본 상태 인식과 잔상 제거, 저장·복원 등을 확인했습니다. [GUI 검증 결과](valve-control/artifacts/validation.json)를 볼 수 있습니다.
 
-Windows에서 GUI·CMD·독립 EXE를 검증하고 ZIP 무결성까지 확인한 실행 파일을 게시합니다. 최신 [빌드 결과](windows-build.json)에 버전·상태·SHA256·실행 기록 주소를 기록합니다. [Actions](https://github.com/sidemae/program/actions)에서 빌드 진행 상태를 볼 수 있습니다.
+Windows에서 GUI 검사 55개, CMD 실행 검사 8개, 독립 EXE 실행 검사 8개를 모두 통과했습니다. 원본 그림의 픽셀 일치, 실제 밸브 20개 클릭 좌표, ID·설명 편집과 중복 방지를 실행 파일에서도 확인했습니다. 게시된 ZIP을 다시 다운로드해 무결성과 검증된 EXE의 일치도 확인했습니다. [빌드 결과](windows-build.json), [Windows 실행 기록](https://github.com/sidemae/program/actions/runs/37720762108)을 볼 수 있습니다.
+
+- Windows ZIP 크기: 21,443,689바이트 (약 21MB)
+- SHA256: `b26d1535b7f91e70d9ae978745367edce933c9921805f379c8c882d2f6d1ee57`
 
 새 도면의 자동 인식 위치는 편집으로 조정할 수 있습니다. 현재는 화면상의 시뮬레이션이며 실제 장비 통신·밸브 구동·유량 계산은 포함하지 않습니다.
