@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "status": "passed",
-  "version": "1.0.1",
-  "source_commit": "cc7d4cb7b5add9b3ea9ffc55e6022f91c32381ff",
-  "run_url": "https://github.com/sidemae/program/actions/runs/37716829801",
+  "version": "1.1.0",
+  "source_commit": "4529fc971834f298655dc20a12ced1640f6a93d0",
+  "run_url": "https://github.com/sidemae/program/actions/runs/37718413088",
   "runner": {
     "platform": "Windows",
     "architecture": "AMD64",
@@ -17,14 +17,14 @@
     },
     "gui": {
       "status": "passed",
-      "count": 40
+      "count": 50
     },
     "launcher": {
       "status": "passed",
       "checks": [
-        "default image and closed valves",
-        "click opens green",
-        "click closes red",
+        "mixed default states and image-only canvas",
+        "pictured lever opens green parallel",
+        "pictured lever closes red perpendicular",
         "Pillow PNG decoding and transparency",
         "embedded image and state project roundtrip"
       ]
@@ -32,15 +32,15 @@
     "build": {
       "status": "passed",
       "name": "ValveControl.exe",
-      "bytes": 20129501,
-      "sha256": "526aff927b184d7c6fbd82cd6f7b25f076ab7675bd493817571cb373e24948e9"
+      "bytes": 21482581,
+      "sha256": "83d90c043ea0cae24be51a60180e47cfda003bb97ab428bcf6047700af2cc64c"
     },
     "exe_smoke": {
       "status": "passed",
       "checks": [
-        "default image and closed valves",
-        "click opens green",
-        "click closes red",
+        "mixed default states and image-only canvas",
+        "pictured lever opens green parallel",
+        "pictured lever closes red perpendicular",
         "Pillow PNG decoding and transparency",
         "embedded image and state project roundtrip"
       ],
@@ -49,17 +49,17 @@
     },
     "package": {
       "status": "passed",
-      "name": "valve-control-windows-1.0.1.zip",
-      "bytes": 19863074,
-      "sha256": "9b446f10249e2b7e76f320fcc25d171140c150d51fc93fe50d59229c4349de64"
+      "name": "valve-control-windows-1.1.0.zip",
+      "bytes": 21217147,
+      "sha256": "fad67f951f43d59fc40a36220ffaa6fb2512326e1d957a0139478eac1c39c216"
     }
   },
   "archive": {
-    "name": "valve-control-windows-1.0.1.zip",
-    "bytes": 19863074,
-    "sha256": "9b446f10249e2b7e76f320fcc25d171140c150d51fc93fe50d59229c4349de64"
+    "name": "valve-control-windows-1.1.0.zip",
+    "bytes": 21217147,
+    "sha256": "fad67f951f43d59fc40a36220ffaa6fb2512326e1d957a0139478eac1c39c216"
   },
-  "completed_at_utc": "2026-10-08T02:14:44.565266+00:00",
+  "completed_at_utc": "2026-10-08T02:34:02.831320+00:00",
   "workflow_steps": {
     "dependencies": "success",
     "build": "success"
