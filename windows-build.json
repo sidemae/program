@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "status": "passed",
-  "version": "1.1.1",
-  "source_commit": "48ca1984d0a989d0d7ed900602d0c4d58749c577",
-  "run_url": "https://github.com/sidemae/program/actions/runs/37720762108",
+  "version": "1.1.2",
+  "source_commit": "9367a153b29eb0acfafe0a94770dad4fa261b722",
+  "run_url": "https://github.com/sidemae/program/actions/runs/37739000164",
   "runner": {
     "platform": "Windows",
     "architecture": "AMD64",
@@ -17,14 +17,17 @@
     },
     "gui": {
       "status": "passed",
-      "count": 55
+      "count": 60
     },
     "launcher": {
       "status": "passed",
       "checks": [
         "mixed default states and image-only canvas",
-        "initial original artwork is pixel-identical",
-        "all twenty actual source body coordinates click independently",
+        "initial scene matches the corrected single-lever reference",
+        "all registered manual automatic and control valve coordinates click independently",
+        "automatic and control valve actuators turn green and red without rotating their bodies",
+        "GAS N2 is a single red or green lever without a second branch",
+        "repeated mixed operations restore exact scene pixels and leave the clean background unchanged",
         "pictured lever opens green parallel",
         "pictured lever closes red perpendicular",
         "user ID and description edits preserve geometry and reject duplicate IDs",
@@ -35,15 +38,18 @@
     "build": {
       "status": "passed",
       "name": "ValveControl.exe",
-      "bytes": 21708764,
-      "sha256": "237b976bd86a973a22fd0dc488c310b57f025651cecdb4062590a0e3fc25d1a6"
+      "bytes": 22439127,
+      "sha256": "5499a1da9ca689b0cfb48dfe2f1fd7d52e9a32132b1a26ac6d84ba085a5b966b"
     },
     "exe_smoke": {
       "status": "passed",
       "checks": [
         "mixed default states and image-only canvas",
-        "initial original artwork is pixel-identical",
-        "all twenty actual source body coordinates click independently",
+        "initial scene matches the corrected single-lever reference",
+        "all registered manual automatic and control valve coordinates click independently",
+        "automatic and control valve actuators turn green and red without rotating their bodies",
+        "GAS N2 is a single red or green lever without a second branch",
+        "repeated mixed operations restore exact scene pixels and leave the clean background unchanged",
         "pictured lever opens green parallel",
         "pictured lever closes red perpendicular",
         "user ID and description edits preserve geometry and reject duplicate IDs",
@@ -55,17 +61,17 @@
     },
     "package": {
       "status": "passed",
-      "name": "valve-control-windows-1.1.1.zip",
-      "bytes": 21443689,
-      "sha256": "b26d1535b7f91e70d9ae978745367edce933c9921805f379c8c882d2f6d1ee57"
+      "name": "valve-control-windows-1.1.2.zip",
+      "bytes": 22174510,
+      "sha256": "60ce8aaf0c7a49a557a6a4a3147a0e8c40d577fb1647e674cdfabe81f5d7eac0"
     }
   },
   "archive": {
-    "name": "valve-control-windows-1.1.1.zip",
-    "bytes": 21443689,
-    "sha256": "b26d1535b7f91e70d9ae978745367edce933c9921805f379c8c882d2f6d1ee57"
+    "name": "valve-control-windows-1.1.2.zip",
+    "bytes": 22174510,
+    "sha256": "60ce8aaf0c7a49a557a6a4a3147a0e8c40d577fb1647e674cdfabe81f5d7eac0"
   },
-  "completed_at_utc": "2026-10-08T03:03:13.200164+00:00",
+  "completed_at_utc": "2026-10-08T06:43:53.714039+00:00",
   "workflow_steps": {
     "dependencies": "success",
     "build": "success"
