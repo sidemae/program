@@ -4,7 +4,9 @@
 
 ## 다운로드
 
-Windows 1.1.2 실행 파일은 소스 검증을 마치고 빌드 중입니다. 실제 Windows GUI·CMD·독립 EXE 검증을 통과한 ZIP을 이 페이지에 게시합니다.
+[Windows EXE 1.1.2 ZIP 다운로드 · 약 22MB](https://github.com/sidemae/program/raw/refs/heads/delivery/valve-control-1.0/valve-control-windows-1.1.2.zip)
+
+Windows 10/11 64비트에서 ZIP을 모두 압축 해제하고 **ValveControl.exe**를 더블 클릭하세요. Python 설치가 필요하지 않습니다.
 
 [Python 소스 ZIP 다운로드](https://github.com/sidemae/program/raw/refs/heads/delivery/valve-control-1.0/valve-control-1.1.2.zip)
 
@@ -27,6 +29,9 @@ Python 3.11 이상을 설치하고 ZIP을 모두 압축 해제한 뒤 `valve-con
 
 Linux에서 실제 GUI 검사 60개를 통과했습니다. 29개 제어 대상의 실제 몸통 좌표를 최소·확대 창 크기에서 클릭하고, 자동밸브 구동부 직접 클릭, 단일 V08, 인접한 금속부·지지대 보존, 전체 밸브의 반복 조작, 사용자 ID·설명과 프로젝트 복원을 확인했습니다. [GUI 검증 결과](valve-control/artifacts/validation.json)를 볼 수 있습니다.
 
-Windows 결과는 [빌드 보고서](windows-build.json)에 기록합니다. 보고서의 버전이 1.1.2이고 상태가 `passed`일 때 해당 실행 파일이 검증된 것입니다.
+Windows에서도 GUI 검사 60개, CMD 실행 검사 11개, 소스 폴더 없이 실행하는 독립 EXE 검사 11개를 통과했습니다. 한글·공백 경로에서도 실행하고, 29개 실제 좌표와 자동·조절밸브 색 전환, 단일 V08, 반복 조작 후 이미지 보존과 ID·설명 편집을 확인했습니다. 게시된 ZIP을 다시 다운로드해 무결성과 검증된 EXE의 일치도 확인했습니다. [빌드 보고서](windows-build.json), [Windows 실행 기록](https://github.com/sidemae/program/actions/runs/37739000164)을 볼 수 있습니다.
+
+- Windows ZIP: 22,174,510바이트
+- SHA256: `60ce8aaf0c7a49a557a6a4a3147a0e8c40d577fb1647e674cdfabe81f5d7eac0`
 
 현재 기능은 화면상의 시뮬레이션입니다. 실제 장비 통신·밸브 구동·유량 계산은 포함하지 않습니다.
