@@ -1,4 +1,4 @@
-"""이미지 레이어 위의 밸브 모식 제어. Python 3.11+ / Pillow / Tkinter."""
+"""도면 속 밸브 손잡이의 색과 방향을 바꾸는 모식 제어. Python 3.11+."""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +17,8 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 import zipfile
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageTk
+
+import valve_render
 
 GREEN, RED = "#16a34a", "#dc2626"
 COORDINATES = "normalized_0_to_1"
@@ -45,8 +47,18 @@ def default_valves():
         (242, 620, "SC-1811 세로 분기", "vertical"),
         (1250, 474, "압축기 상부 연결", "vertical"),
     ]
-    return [dict(id=f"V{i:02}", name=n, x=x / 1600, y=y / 900, axis=a, opened=False)
-            for i, (x, y, n, a) in enumerate(rows, 1)]
+    initially_open = {1, 2, 3, 4, 5, 9, 10, 12, 13, 18, 19, 20}
+    right_mount = {10, 19}
+    left_lever = {8, 12, 18, 20}
+    result = []
+    for i, (x, y, n, a) in enumerate(rows, 1):
+        offset = [0, -24 / 900] if a == "horizontal" else [(27 if i in right_mount else -27) / 1600, 0]
+        result.append(dict(id=f"V{i:02}", name=n, x=x / 1600, y=y / 900, axis=a,
+                           opened=i in initially_open,
+                           visual=dict(pivot_offset=offset, length=52 / 1600,
+                                       thickness=8 / 1600, side=-1 if i in left_lever else 1,
+                                       body=True)))
+    return result
 
 
 def demo_image():
@@ -91,7 +103,7 @@ def validate(data):
         raise ValueError("밸브 목록을 확인하세요. 최대 1,000개까지 지원합니다.")
     keys = {"id", "name", "x", "y", "axis", "opened"}
     for v in rows:
-        if not isinstance(v, dict) or set(v) != keys:
+        if not isinstance(v, dict) or not keys.issubset(v) or set(v) - keys - {"visual"}:
             raise ValueError("밸브 항목 형식이 잘못되었습니다.")
         if any(not isinstance(v[k], str) or not v[k].strip() or len(v[k]) > 200 for k in ("id", "name")):
             raise ValueError("밸브 ID와 이름은 비어 있으면 안 됩니다.")
@@ -99,6 +111,17 @@ def validate(data):
             raise ValueError("중복 ID, 배관 방향 또는 상태를 확인하세요.")
         if not all(type(v[k]) in (int, float) and 0 <= v[k] <= 1 and math.isfinite(v[k]) for k in ("x", "y")):
             raise ValueError("밸브 좌표는 0~1 사이여야 합니다.")
+        if "visual" in v:
+            visual = v["visual"]
+            if not isinstance(visual, dict) or set(visual) != {"pivot_offset", "length", "thickness", "side", "body"}:
+                raise ValueError("밸브 손잡이 정보가 잘못되었습니다.")
+            offset = visual["pivot_offset"]
+            if not isinstance(offset, list) or len(offset) != 2 or not all(type(n) in (int, float) and -0.25 <= n <= 0.25 and math.isfinite(n) for n in offset):
+                raise ValueError("밸브 손잡이 축 위치를 확인하세요.")
+            if not all(type(visual[k]) in (int, float) and 0 < visual[k] <= 0.25 and math.isfinite(visual[k]) for k in ("length", "thickness")) or visual["thickness"] > visual["length"]:
+                raise ValueError("밸브 손잡이 크기를 확인하세요.")
+            if type(visual["side"]) is not int or visual["side"] not in (-1, 1) or type(visual["body"]) is not bool:
+                raise ValueError("밸브 손잡이 방향을 확인하세요.")
         seen.add(v["id"])
     return deepcopy(rows)
 
@@ -115,6 +138,18 @@ def atomic_write(path, writer):
             os.unlink(tmp)
 
 
+def initial_scene():
+    """PDF에서 추출하고 손잡이 위치를 확인한 기본 도면을 읽는다."""
+    path = Path(__file__).resolve().parent / "assets" / "GC-1512A.vcp"
+    if not path.exists():
+        return demo_image(), default_valves(), False
+    with zipfile.ZipFile(path) as archive:
+        rows = validate(json.loads(archive.read("project.json")))
+        with Image.open(io.BytesIO(archive.read("background.png"))) as image:
+            background = image.convert("RGB")
+    return background, rows, True
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -125,12 +160,13 @@ class App(tk.Tk):
         if family != "TkDefaultFont":
             tkfont.nametofont("TkDefaultFont").configure(family=family, size=10)
         self.ui_font = (family, 10)
-        self.background, self.valves = demo_image(), default_valves()
+        self.background, self.valves, self.reference_loaded = initial_scene()
         self.selected, self.drag_id, self.adding = "V01", None, False
         self.project_path, self.dirty, self.pending = None, False, None
         self.photo, self.cached_photo, self.cached_size = None, None, None
+        self.rendered_image, self.scene_key = None, None
         self.transform = (0., 0., 1600., 900.)
-        self.editing, self.show_ids = tk.BooleanVar(), tk.BooleanVar(value=True)
+        self.editing, self.show_ids = tk.BooleanVar(), tk.BooleanVar(value=False)
         self.name_var, self.axis_var = tk.StringVar(), tk.StringVar()
         self.status, self.counts = tk.StringVar(), tk.StringVar()
         self.build_ui()
@@ -164,7 +200,7 @@ class App(tk.Tk):
         for text, action in [("이미지 열기", self.image_dialog), ("프로젝트 열기", self.open_dialog), ("저장", self.save_dialog)]:
             ttk.Button(bar, text=text, command=action).pack(side="left", padx=3)
         ttk.Checkbutton(bar, text="위치 편집", variable=self.editing, command=self.mode_changed).pack(side="left", padx=12)
-        ttk.Checkbutton(bar, text="ID 표시", variable=self.show_ids, command=self.draw).pack(side="left")
+        ttk.Checkbutton(bar, text="편집 시 ID 표시", variable=self.show_ids, command=self.draw).pack(side="left")
         ttk.Label(bar, textvariable=self.counts).pack(side="right")
         body = ttk.Frame(self, padding=(12, 0, 12, 8))
         body.pack(fill="both", expand=True)
@@ -262,24 +298,27 @@ class App(tk.Tk):
         scale = min(w / self.background.width, h / self.background.height)
         iw, ih = max(1, round(self.background.width * scale)), max(1, round(self.background.height * scale))
         self.transform = ((w - iw) / 2, (h - ih) / 2, iw, ih)
+        scene_key = (id(self.background), json.dumps(self.valves, sort_keys=True))
+        if self.scene_key != scene_key:
+            self.rendered_image = valve_render.render_scene(self.background, self.valves)
+            self.scene_key, self.cached_size = scene_key, None
         if self.cached_size != (iw, ih):
-            self.cached_photo = ImageTk.PhotoImage(self.background.resize((iw, ih), Image.Resampling.LANCZOS))
+            self.cached_photo = ImageTk.PhotoImage(self.rendered_image.resize((iw, ih), Image.Resampling.LANCZOS))
             self.cached_size = (iw, ih)
         self.photo = self.cached_photo
         ox, oy, _, _ = self.transform
         self.canvas.delete("all")
         self.canvas.create_image(ox, oy, image=self.photo, anchor="nw", tags="background")
-        for v in self.valves:
-            x, y = self.screen(v)
-            if v["id"] == self.selected:
-                self.canvas.create_oval(x - 18, y - 18, x + 18, y + 18, outline="#2563eb", width=2, dash=(3, 3))
-            self.canvas.create_oval(x - 12, y - 12, x + 12, y + 12, fill=GREEN if v["opened"] else RED, outline="white", width=2, tags=v["id"])
-            dx, dy = (8, 0) if ((v["axis"] == "horizontal") == v["opened"]) else (0, 8)
-            self.canvas.create_line(x - dx, y - dy, x + dx, y + dy, fill="white", width=3, tags=v["id"])
-            if self.show_ids.get():
-                offset = -27 if v["id"] == "V09" else 25
-                self.canvas.create_rectangle(x - 19, y + offset - 10, x + 19, y + offset + 10, fill="white", outline="#cbd5e1")
-                self.canvas.create_text(x, y + offset, text=v["id"], fill="#334155", font=self.ui_font)
+        if self.editing.get():
+            for v in self.valves:
+                x, y = self.screen(v)
+                if v["id"] == self.selected:
+                    x0, y0, x1, y1 = valve_render.visual_bounds(self.background, v)
+                    sx, sy = iw / self.background.width, ih / self.background.height
+                    self.canvas.create_rectangle(ox + x0 * sx, oy + y0 * sy, ox + x1 * sx, oy + y1 * sy,
+                                                 outline="#2563eb", width=2, dash=(3, 3))
+                if self.show_ids.get():
+                    self.canvas.create_text(x, y + 25, text=v["id"], fill="#334155", font=self.ui_font)
 
     def screen(self, v):
         ox, oy, iw, ih = self.transform
@@ -292,9 +331,10 @@ class App(tk.Tk):
     def hit(self, x, y):
         if not self.valves or self.normalized(x, y) is None:
             return None
-        pairs = [(math.hypot(x - sx, y - sy), v) for v in self.valves for sx, sy in [self.screen(v)]]
-        distance, v = min(pairs, key=lambda pair: pair[0])
-        return v if distance <= 18 else None
+        nx, ny = self.normalized(x, y)
+        px, py = nx * self.background.width, ny * self.background.height
+        candidates = [v for v in self.valves if valve_render.valve_hit(self.background, v, px, py)]
+        return min(candidates, key=lambda v: math.hypot(x - self.screen(v)[0], y - self.screen(v)[1])) if candidates else None
 
     def select(self, event=None):
         rows = self.tree.selection()
@@ -356,7 +396,7 @@ class App(tk.Tk):
 
     def mode_changed(self):
         self.adding, self.drag_id = False, None
-        self.status.set("위치 편집: 선택 후 드래그 또는 배경 클릭으로 이동" if self.editing.get() else "밸브 클릭: 초록(열림) ↔ 빨강(닫힘)")
+        self.status.set("위치 편집: 선택 후 드래그 또는 배경 클릭으로 이동" if self.editing.get() else "밸브 몸체·손잡이 클릭: 녹색·배관과 나란함(열림) ↔ 빨강·배관과 직각(닫힘)")
 
     def begin_add(self):
         self.editing.set(True)
@@ -397,6 +437,10 @@ class App(tk.Tk):
         if not name or len(name) > 200 or axis not in ("horizontal", "vertical"):
             raise ValueError("이름(1~200자)과 배관 방향을 확인하세요.")
         if (v["name"], v["axis"]) != (name, axis):
+            if axis != v["axis"] and "visual" in v:
+                dx, dy = v["visual"]["pivot_offset"]
+                distance = max(abs(dx * self.background.width), abs(dy * self.background.height))
+                v["visual"]["pivot_offset"] = [0, -distance / self.background.height] if axis == "horizontal" else [-distance / self.background.width, 0]
             v["name"], v["axis"] = name, axis
             self.mark_dirty()
             self.sync()
@@ -405,10 +449,15 @@ class App(tk.Tk):
         with Image.open(path) as image:
             rgba = ImageOps.exif_transpose(image).convert("RGBA")
             loaded = Image.alpha_composite(Image.new("RGBA", rgba.size, "white"), rgba).convert("RGB")
-        self.background, self.cached_size = loaded, None
+        clean, detected = valve_render.prepare_image(loaded)
+        self.background, self.cached_size = clean, None
+        if detected:
+            self.valves, self.selected = detected, detected[0]["id"]
+            self.sync()
         self.mark_dirty()
         self.draw()
-        self.status.set(f"배경: {Path(path).name} · 위치 편집으로 밸브를 맞추세요.")
+        self.status.set(f"{Path(path).name} · 녹색·빨간색 손잡이 {len(detected)}개 인식 · 원본 상태 적용 · 위치 편집으로 확인하세요."
+                        if detected else f"배경: {Path(path).name} · 인식된 손잡이 없음 · 위치 편집으로 밸브를 맞추세요.")
 
     def document(self, rows=None):
         return dict(schema_version=1, coordinate_system=COORDINATES, mode="simulation", valves=deepcopy(self.valves if rows is None else rows))
@@ -462,7 +511,7 @@ class App(tk.Tk):
 
     def image_dialog(self):
         path = filedialog.askopenfilename(parent=self, title="배경 이미지", filetypes=[("이미지", "*.png *.jpg *.jpeg *.bmp *.webp"), ("모든 파일", "*")])
-        if path:
+        if path and self.confirm_discard():
             self.guard(lambda: self.load_image(path))
 
     def save_dialog(self, save_as=False):
@@ -511,19 +560,29 @@ def run_smoke(app, path):
     try:
         app.update()
         app.draw()
-        assert len(app.valves) == 20 and not any(v["opened"] for v in app.valves)
-        checks.append("default image and closed valves")
-        v = app.valves[0]
+        assert app.reference_loaded and len(app.valves) >= 20
+        assert any(v["opened"] for v in app.valves) and any(not v["opened"] for v in app.valves)
+        assert all(app.canvas.type(item) == "image" for item in app.canvas.find_all())
+        checks.append("mixed default states and image-only canvas")
+        v = next(v for v in app.valves if not v["opened"] and v["axis"] == "horizontal")
         x, y = app.screen(v)
-        for opened, color in ((True, GREEN), (False, RED)):
+        for opened in (True, False):
             app.canvas.event_generate("<ButtonPress-1>", x=round(x), y=round(y))
             app.canvas.event_generate("<ButtonRelease-1>", x=round(x), y=round(y))
             app.update()
             app.draw()
             assert v["opened"] is opened
-            marker = app.canvas.find_withtag(v["id"])[0]
-            assert app.canvas.itemcget(marker, "fill") == color
-            checks.append("click opens green" if opened else "click closes red")
+            x0, y0, x1, y1 = valve_render.visual_bounds(app.background, v)
+            crop = app.rendered_image.crop((int(x0), int(y0), math.ceil(x1), math.ceil(y1)))
+            pixels = crop.load()
+            points = [(cx, cy) for cy in range(crop.height) for cx in range(crop.width)
+                      if (pixels[cx, cy][1] > 75 and pixels[cx, cy][1] > pixels[cx, cy][0] * 1.5 and pixels[cx, cy][1] > pixels[cx, cy][2] * 1.25)
+                      or (pixels[cx, cy][0] > 100 and pixels[cx, cy][0] > pixels[cx, cy][1] * 1.5 and pixels[cx, cy][0] > pixels[cx, cy][2] * 1.5)]
+            assert points
+            width = max(p[0] for p in points) - min(p[0] for p in points)
+            height = max(p[1] for p in points) - min(p[1] for p in points)
+            assert (width > height * 2) if opened else (height > width * 2)
+            checks.append("pictured lever opens green parallel" if opened else "pictured lever closes red perpendicular")
         with tempfile.TemporaryDirectory(prefix="valve-smoke-") as folder:
             image = Path(folder) / "image.png"
             rgba = Image.new("RGBA", (240, 180), (0, 0, 0, 0))

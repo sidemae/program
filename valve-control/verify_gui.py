@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import PIL
-from PIL import Image, ImageDraw, ImageGrab
+from PIL import Image, ImageChops, ImageDraw, ImageGrab
 from tkinter import messagebox
 
 import valve_control as program
@@ -66,6 +66,10 @@ def main():
             app = program.App()
             app.report_callback_exception = lambda *args: errors.append("".join(traceback.format_exception(*args)))
             temp = Path(temp)
+            initial_count = len(app.valves)
+            initial_open_count = sum(row["opened"] for row in app.valves)
+            reference_path = HERE / "assets" / "GC-1512A.png"
+            reference_bytes = reference_path.read_bytes() if reference_path.exists() else None
 
             def check(name, condition):
                 if not condition:
@@ -93,18 +97,87 @@ def main():
 
             def snapshot():
                 return (copy.deepcopy(app.valves), app.background.size, app.background.tobytes(),
-                        app.selected, app.project_path, app.dirty)
+                        app.rendered_image.tobytes(), app.selected, app.project_path, app.dirty)
 
             def capture(filename):
                 settle()
                 x, y = app.winfo_rootx(), app.winfo_rooty()
                 ImageGrab.grab(bbox=(x, y, x + app.winfo_width(), y + app.winfo_height())).save(output / filename)
 
-            def marker_color(identifier):
-                x, y = app.screen(valve(identifier))
-                items = app.canvas.find_overlapping(x - 2, y - 2, x + 2, y + 2)
-                return [app.canvas.itemcget(item, "fill") for item in items
-                        if app.canvas.type(item) == "oval"]
+            def only_picture():
+                return [app.canvas.type(item) for item in app.canvas.find_all()] == ["image"]
+
+            def is_color(pixel, color):
+                red, green, blue = pixel[:3]
+                return (green > 60 and green > red * 1.25 and green > blue * 1.25
+                        if color == "green" else red > 80 and red > green * 1.4 and red > blue * 1.4)
+
+            def lever_region(row):
+                width, height = app.background.size
+                visual = row.get("visual", {})
+                dx, dy = visual.get("pivot_offset", (0, 0))
+                x, y = (row["x"] + dx) * width, (row["y"] + dy) * height
+                radius = visual.get("length", 0.035) * width + visual.get("thickness", 0.005) * width * 2 + 5
+                return (max(0, int(x - radius)), max(0, int(y - radius)),
+                        min(width, int(x + radius + 1)), min(height, int(y + radius + 1)))
+
+            def color_geometry(row, color):
+                left, top, right, bottom = lever_region(row)
+                image = app.rendered_image.crop((left, top, right, bottom))
+                remaining = {(x, y) for y in range(image.height) for x in range(image.width)
+                             if is_color(image.getpixel((x, y)), color)}
+                if not remaining:
+                    return None
+                components = []
+                while remaining:
+                    pending = [remaining.pop()]
+                    component = []
+                    while pending:
+                        x, y = pending.pop()
+                        component.append((x, y))
+                        for near_y in range(y - 1, y + 2):
+                            for near_x in range(x - 1, x + 2):
+                                neighbor = (near_x, near_y)
+                                if neighbor in remaining:
+                                    remaining.remove(neighbor)
+                                    pending.append(neighbor)
+                    components.append(component)
+                width, height = app.background.size
+                visual = row.get("visual", {})
+                dx, dy = visual.get("pivot_offset", (0, 0))
+                target_x, target_y = (row["x"] + dx) * width - left, (row["y"] + dy) * height - top
+                distance = visual.get("length", 0.036) * width * 0.55
+                if (row["axis"] == "horizontal") == row["opened"]:
+                    target_x += visual.get("side", 1) * distance
+                else:
+                    target_y -= distance
+                points = min(components, key=lambda component: min((x - target_x) ** 2 + (y - target_y) ** 2
+                                                                 for x, y in component))
+                if min((x - target_x) ** 2 + (y - target_y) ** 2 for x, y in points) > 100:
+                    return None
+                return (max(p[0] for p in points) - min(p[0] for p in points) + 1,
+                        max(p[1] for p in points) - min(p[1] for p in points) + 1)
+
+            def lever_matches(row):
+                geometry = color_geometry(row, "green" if row["opened"] else "red")
+                horizontal = (row["axis"] == "horizontal") == row["opened"]
+                if not geometry:
+                    return False
+                span_x, span_y = geometry
+                return span_x > 2 * span_y if horizontal else span_y > 2 * span_x
+
+            def lever_tip(row):
+                width, height = app.background.size
+                visual = row["visual"]
+                dx, dy = visual["pivot_offset"]
+                x, y = (row["x"] + dx) * width, (row["y"] + dy) * height
+                distance = visual["length"] * width * 0.8
+                horizontal = (row["axis"] == "horizontal") == row["opened"]
+                if horizontal:
+                    x += visual["side"] * distance
+                else:
+                    y -= distance
+                return app.screen(dict(x=x / width, y=y / height))
 
             def expect_rejected(path, loader):
                 before = snapshot()
@@ -117,33 +190,55 @@ def main():
                 return rejected and snapshot() == before
 
             settle()
-            check("20 initial valves are closed", len(app.valves) == 20 and not any(v["opened"] for v in app.valves))
-            check("initial closed marker is red", program.RED in marker_color("V01"))
+            check("reference diagram starts with mixed pictured valve states", initial_count >= 20
+                  and 0 < initial_open_count < initial_count
+                  and f"열림 {initial_open_count}" in app.counts.get()
+                  and f"닫힘 {initial_count - initial_open_count}" in app.counts.get())
+            with Image.open(reference_path) as reference_image:
+                reference_size = reference_image.size
+            check("reference source image is loaded without modifying its file", app.background.size == reference_size
+                  and app.reference_loaded and reference_path.read_bytes() == reference_bytes)
+            check("normal canvas contains only the rendered diagram image", only_picture())
+            check("initial pictured lever is green and parallel to its horizontal pipe", lever_matches(valve("V01")))
             capture("implementation_closed.png")
+            untouched = app.rendered_image.copy()
             click("V01")
-            check("real canvas click opens and paints green", valve("V01")["opened"]
-                  and program.GREEN in marker_color("V01") and "열림 1" in app.counts.get())
+            check("horizontal pictured lever closes red and perpendicular on real click", not valve("V01")["opened"]
+                  and lever_matches(valve("V01")) and f"열림 {initial_open_count - 1}" in app.counts.get())
+            changed = ImageChops.difference(untouched, app.rendered_image).getbbox()
+            left, top, right, bottom = lever_region(valve("V01"))
+            check("click redraw changes only the selected pictured valve region", changed is not None
+                  and left <= changed[0] <= changed[2] <= right and top <= changed[1] <= changed[3] <= bottom)
             click("V01")
-            check("second real canvas click closes and paints red", not valve("V01")["opened"]
-                  and program.RED in marker_color("V01"))
+            check("horizontal pictured lever opens green and parallel on second click", valve("V01")["opened"]
+                  and lever_matches(valve("V01")) and only_picture())
+            press(*lever_tip(valve("V01")))
+            check("pictured lever tip is clickable beyond the valve body", not valve("V01")["opened"]
+                  and lever_matches(valve("V01")))
+            click("V01")
             before = copy.deepcopy(app.valves)
             press(2, 2)
             check("background click does not toggle a valve", app.valves == before)
             click("V09")
-            check("neighboring valve remains independently closed", valve("V09")["opened"] and not valve("V10")["opened"])
+            check("neighboring pictured valve keeps its independent open state", not valve("V09")["opened"] and valve("V10")["opened"])
             click("V10")
-            check("nearest hit selects adjacent valve independently", valve("V09")["opened"] and valve("V10")["opened"])
+            check("nearest pictured hit selects adjacent valve independently", not valve("V09")["opened"] and not valve("V10")["opened"])
             app.geometry("1080x760")
             settle()
             check("minimum size keeps properties and operation log visible", app.log.winfo_ismapped()
                   and app.log.winfo_rooty() + app.log.winfo_height() <= app.winfo_rooty() + app.winfo_height())
             click("V06")
-            check("minimum-size resize preserves click and overlay alignment", valve("V06")["opened"]
-                  and program.GREEN in marker_color("V06"))
+            check("minimum-size resize preserves pictured lever click alignment", valve("V06")["opened"]
+                  and lever_matches(valve("V06")) and only_picture())
             app.geometry("1440x950")
             settle()
             click("V12")
             click("V20")
+            check("vertical pictured lever closes red and perpendicular to vertical pipe", not valve("V20")["opened"]
+                  and lever_matches(valve("V20")))
+            click("V20")
+            check("vertical pictured lever opens green and parallel to vertical pipe", valve("V20")["opened"]
+                  and lever_matches(valve("V20")))
             capture("implementation_open.png")
 
             app.editing.set(True)
@@ -169,7 +264,7 @@ def main():
             press(*app.screen(anchor))
             added_ids = {row["id"] for row in app.valves} - previous_ids
             check("real canvas add creates one selected valve", len(added_ids) == 1
-                  and len(app.valves) == 21 and app.selected in added_ids)
+                  and len(app.valves) == initial_count + 1 and app.selected in added_ids)
             added_id = next(iter(added_ids))
             app.name_var.set("검증용 새 밸브")
             app.axis_var.set("vertical")
@@ -191,11 +286,11 @@ def main():
                 app.update()
             settle()
             check("real list double-click toggles added valve and updates counts", valve(added_id)["opened"]
-                  and "전체 21" in app.counts.get())
+                  and f"전체 {initial_count + 1}" in app.counts.get())
             app.delete_selected()
             settle()
-            check("delete removes selected valve and updates count", len(app.valves) == 20
-                  and not any(row["id"] == added_id for row in app.valves) and "전체 20" in app.counts.get())
+            check("delete removes selected valve and updates count", len(app.valves) == initial_count
+                  and not any(row["id"] == added_id for row in app.valves) and f"전체 {initial_count}" in app.counts.get())
             app.editing.set(False)
 
             transparent = Image.new("RGBA", (6, 4), (20, 30, 40, 0))
@@ -222,9 +317,40 @@ def main():
             click("V06")
             check("portrait image letterboxing preserves normalized click alignment", app.background.size == (360, 720)
                   and valve("V06")["opened"] != old_state)
+
+            diagram = Image.new("RGB", (1600, 900), "white")
+            diagram_draw = ImageDraw.Draw(diagram)
+            for center in (160, 430):
+                diagram_draw.line((center - 80, 200, center + 100, 200), fill="#8f949b", width=12)
+                diagram_draw.rectangle((center - 15, 188, center + 15, 212), fill="#c6cbd1", outline="#60656b", width=2)
+            diagram_draw.line((158, 177, 158, 200), fill="#60656b", width=5)
+            diagram_draw.line((430, 177, 430, 200), fill="#60656b", width=5)
+            diagram_draw.line((158, 177, 205, 177), fill="#16a34a", width=8)
+            diagram_draw.line((430, 177, 430, 127), fill="#dc2626", width=8)
+            diagram_draw.rounded_rectangle((490, 260, 560, 325), radius=8, fill="#16a34a")
+            diagram_draw.ellipse((560, 35, 590, 65), fill="#dc2626")
+            source_image = temp / "pictured-levers.png"
+            diagram.save(source_image)
+            fixture_bytes = source_image.read_bytes()
+            app.load_image(source_image)
+            settle()
+            imported = sorted(app.valves, key=lambda row: row["x"])
+            check("detector imports only elongated pictured levers and preserves source bytes", len(imported) == 2
+                  and imported[0]["opened"] is True and imported[1]["opened"] is False
+                  and all(row.get("visual", {}).get("body") is False for row in imported)
+                  and app.background.getpixel((510, 290)) == diagram.getpixel((510, 290))
+                  and source_image.read_bytes() == fixture_bytes and only_picture())
+            pictured_id = imported[0]["id"]
+            click(pictured_id)
+            check("detected lever rotation removes the original color without a ghost", not valve(pictured_id)["opened"]
+                  and lever_matches(valve(pictured_id))
+                  and app.rendered_image.getpixel((185, 177)) == app.background.getpixel((185, 177))
+                  and not is_color(app.rendered_image.getpixel((185, 177)), "green"))
+            click(pictured_id)
             project = temp / "working.vcp"
             expected_valves = copy.deepcopy(app.valves)
             expected_pixels = app.background.tobytes()
+            expected_render = app.rendered_image.tobytes()
             app.save_project(project)
             check("project save clears dirty and records path", not app.dirty and app.project_path == project.resolve())
             with zipfile.ZipFile(project) as archive:
@@ -242,7 +368,8 @@ def main():
             app.load_project(relocated)
             settle()
             check("portable project reopens image positions properties and current states", app.valves == expected_valves
-                  and app.background.tobytes() == expected_pixels and app.project_path == relocated.resolve())
+                  and app.background.tobytes() == expected_pixels and app.rendered_image.tobytes() == expected_render
+                  and app.project_path == relocated.resolve())
 
             def write_project(path, data, background=png):
                 with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -285,6 +412,11 @@ def main():
             enormous_layout = temp / "enormous-coordinate-layout.json"
             enormous_layout.write_text(json.dumps(enormous), encoding="utf-8")
             check("enormous integer coordinate rejects without overflow or state loss", expect_rejected(enormous_layout, app.load_layout))
+            bad_visual = copy.deepcopy(layout_data)
+            bad_visual["valves"][0]["visual"] = dict(pivot_offset=[0, 0], length=-0.1, thickness=0.005, side=1, body=True)
+            bad_visual_path = temp / "invalid-visual-layout.json"
+            bad_visual_path.write_text(json.dumps(bad_visual), encoding="utf-8")
+            check("invalid lever visual metadata rejects without losing active picture", expect_rejected(bad_visual_path, app.load_layout))
             state = temp / "state.json"
             app.export_state(state)
             state_data = json.loads(state.read_text(encoding="utf-8"))
@@ -323,6 +455,16 @@ def main():
             app.load_layout(layout)
             settle()
             check("saved layout imports with closed initial states", not any(row["opened"] for row in app.valves))
+            legacy = copy.deepcopy(layout_data)
+            for row in legacy["valves"]:
+                row.pop("visual", None)
+            legacy_path = temp / "legacy-layout.json"
+            legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+            app.load_layout(legacy_path)
+            settle()
+            check("legacy schema without visual metadata loads as pictured valves", len(app.valves) == len(legacy["valves"])
+                  and all(all(row[key] == saved[key] for key in ("id", "name", "x", "y", "axis", "opened"))
+                          for row, saved in zip(app.valves, legacy["valves"])) and only_picture())
             empty = app.document([])
             empty_path = temp / "empty-layout.json"
             empty_path.write_text(json.dumps(empty), encoding="utf-8")
@@ -342,7 +484,10 @@ def main():
                 "python": platform.python_version(), "pillow": PIL.__version__,
                 "tk": app.tk.call("package", "require", "Tk"),
                 "screen_capture": ["implementation_closed.png", "implementation_open.png"],
-                "original_attachment_tested": False,
+                "original_attachment_tested": True,
+                "reference_image_size": list(reference_size),
+                "reference_valve_count": initial_count,
+                "reference_open_count": initial_open_count,
             }
             (output / "validation.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"Completed: {len(checks)} meaningful GUI checks passed", flush=True)

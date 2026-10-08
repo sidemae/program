@@ -22,8 +22,17 @@ import zipfile
 
 
 HERE = Path(__file__).resolve().parent
-ARCHIVE_NAME = "valve-control-windows-1.0.1.zip"
-REQUIRED_GUI_CHECKS = 40
+RELEASE_VERSION = "1.1.0"
+ARCHIVE_NAME = f"valve-control-windows-{RELEASE_VERSION}.zip"
+MINIMUM_GUI_CHECKS = 40
+REQUIRED_GUI_PROOFS = {
+    "normal canvas contains only the rendered diagram image",
+    "horizontal pictured lever closes red and perpendicular on real click",
+    "horizontal pictured lever opens green and parallel on second click",
+    "vertical pictured lever closes red and perpendicular to vertical pipe",
+    "detector imports only elongated pictured levers and preserves source bytes",
+    "detected lever rotation removes the original color without a ghost",
+}
 REQUIRED_PILLOW = "12.3.0"
 REQUIRED_PYINSTALLER = "6.22.3"
 PHASES = ("dependencies", "gui", "launcher", "build", "exe_smoke", "package")
@@ -101,7 +110,7 @@ def base_status(args) -> dict:
     return {
         "schema_version": 1,
         "status": "running",
-        "version": "1.0.1",
+        "version": RELEASE_VERSION,
         "source_commit": args.source_sha,
         "run_url": args.run_url,
         "runner": {"platform": platform.system(), "architecture": platform.machine(),
@@ -113,6 +122,10 @@ def base_status(args) -> dict:
 def build(args) -> int:
     output = args.output_directory.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    # A failed rerun must never leave a previous successful package beside its
+    # new failure report. Only the newly tested binary is eligible for delivery.
+    (output / ARCHIVE_NAME).unlink(missing_ok=True)
+    (output / "validation.json").unlink(missing_ok=True)
     status_path = output / "windows-build.json"
     status = base_status(args)
     phase = "dependencies"
@@ -132,8 +145,13 @@ def build(args) -> int:
         gui_file.unlink(missing_ok=True)
         run([sys.executable, "verify_gui.py"], cwd=HERE, timeout=180)
         gui_result = read_passed(gui_file)
-        if gui_result.get("count") != REQUIRED_GUI_CHECKS or len(gui_result.get("checks", [])) != REQUIRED_GUI_CHECKS:
-            raise BuildFailure(f"Expected exactly {REQUIRED_GUI_CHECKS} meaningful GUI checks")
+        count = gui_result.get("count")
+        checks = gui_result.get("checks")
+        if type(count) is not int or count < MINIMUM_GUI_CHECKS or not isinstance(checks, list) or len(checks) != count:
+            raise BuildFailure(f"Expected at least {MINIMUM_GUI_CHECKS} meaningful GUI checks with matching reported count")
+        if not REQUIRED_GUI_PROOFS.issubset(checks):
+            missing = sorted(REQUIRED_GUI_PROOFS.difference(checks))
+            raise BuildFailure("Missing pictured-valve integration proofs: " + "; ".join(missing))
         status["phases"][phase] = {"status": "passed", "count": gui_result["count"]}
 
         phase = "launcher"
@@ -149,12 +167,20 @@ def build(args) -> int:
         status["phases"][phase] = {"status": "passed", "checks": launcher_result["checks"]}
 
         phase = "build"
-        run([
+        build_command = [
             sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
             "--onefile", "--windowed", "--name", "ValveControl", "--collect-all", "PIL",
+            "--hidden-import", "valve_render",
             "--distpath", str(output / "dist"), "--workpath", str(output / "work"),
-            "--specpath", str(output / "spec"), str(HERE / "valve_control.py"),
-        ], cwd=HERE, timeout=600)
+            "--specpath", str(output / "spec"),
+        ]
+        # Rendering is normally imported directly and generated from Python.
+        # Retain an optional local asset directory if the release supplies one.
+        assets = HERE / "assets"
+        if assets.is_dir():
+            build_command.extend(["--add-data", f"{assets}:assets"])
+        build_command.append(str(HERE / "valve_control.py"))
+        run(build_command, cwd=HERE, timeout=600)
         executable = output / "dist" / "ValveControl.exe"
         if not executable.is_file() or executable.stat().st_size < 1_000_000:
             raise BuildFailure("PyInstaller did not produce the expected standalone executable")
@@ -177,19 +203,22 @@ def build(args) -> int:
                                    "unicode_path": True, "space_in_path": True}
 
         phase = "package"
-        validation = {"status": "passed", "platform": "Windows", "version": "1.0.1",
+        validation = {"status": "passed", "platform": "Windows", "version": RELEASE_VERSION,
                       "source_commit": args.source_sha, "run_url": args.run_url,
                       "gui": gui_result, "launcher": launcher_result, "executable": exe_result,
                       "bundled_executable": file_details(executable)}
         validation_file = output / "validation.json"
         write_json(validation_file, validation)
         instructions = (
-            "Valve Control 1.0.1 - Windows 10/11 (64-bit)\r\n\r\n"
+            f"Valve Control {RELEASE_VERSION} - Windows 10/11 (64-bit)\r\n\r\n"
             "ZIP을 폴더에 모두 압축 해제한 다음 ValveControl.exe를 더블 클릭하세요.\r\n"
             "Python 설치나 CMD 실행은 필요하지 않습니다.\r\n"
             "처음 시작할 때 단일 EXE가 내장 파일을 준비하므로 잠시 기다리세요.\r\n\r\n"
             "밸브를 클릭하면 초록색(열림), 다시 클릭하면 빨간색(닫힘)이 됩니다.\r\n"
-            "이미지 열기로 원본 도면을 적용하고 위치 편집에서 밸브를 맞추세요.\r\n"
+            "손잡이 색상과 방향이 바뀌며 밸브 본체가 도면 이미지에 표시됩니다.\r\n"
+            "공유한 PDF의 GC-1512A 원본 도면이 기본 화면에 포함되어 있습니다.\r\n"
+            "원본 녹색 12개와 빨강 9개 손잡이의 초기 상태를 유지합니다.\r\n"
+            "다른 도면은 이미지 열기로 적용하고 위치 편집에서 밸브를 맞추세요.\r\n"
             "프로젝트 저장으로 도면, 밸브 위치, 상태를 함께 보관할 수 있습니다.\r\n"
             "현재 기능은 화면에서 상태를 변경하는 시뮬레이션입니다.\r\n\r\n"
             "validation.json에는 실제 Windows GUI, CMD, EXE 실행 검증 결과가 있습니다.\r\n"

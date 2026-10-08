@@ -70,9 +70,9 @@ jobs:
         if: always() && steps.checkout.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: valve-control-windows-1.0.1
+          name: valve-control-windows-1.1.0
           path: |
-            .windows-release/valve-control-windows-1.0.1.zip
+            .windows-release/valve-control-windows-1.1.0.zip
             .windows-release/windows-build.json
             .windows-release/validation.json
             valve-control/artifacts/validation.json
@@ -92,11 +92,14 @@ jobs:
             throw 'No build report was generated; refusing an unverified publication.'
           }
           $result = Get-Content -Raw -Encoding UTF8 $report | ConvertFrom-Json
+          if ($result.source_commit -ne $env:GITHUB_SHA) {
+            throw 'Build report belongs to a different source commit; refusing stale publication.'
+          }
           $statusSource = Join-Path $env:RUNNER_TEMP 'windows-build-to-publish.json'
           Copy-Item -LiteralPath $report -Destination $statusSource
-          $zipSource = Join-Path $env:RUNNER_TEMP 'valve-control-windows-1.0.1.zip'
+          $zipSource = Join-Path $env:RUNNER_TEMP 'valve-control-windows-1.1.0.zip'
           if ($result.status -eq 'passed') {
-            Copy-Item -LiteralPath '.windows-release/valve-control-windows-1.0.1.zip' -Destination $zipSource
+            Copy-Item -LiteralPath '.windows-release/valve-control-windows-1.1.0.zip' -Destination $zipSource
           }
           # Restore only CI-generated changes to tracked source screenshots. The
           # developer's commit is already preserved by checkout and the report.
@@ -104,20 +107,29 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Could not restore generated GUI outputs.' }
           git fetch origin 'delivery/valve-control-1.0'
           if ($LASTEXITCODE -ne 0) { throw 'Could not fetch the delivery branch.' }
+          # Status/ZIP publication commits can advance this branch safely, but
+          # changed application or workflow files invalidate the tested source.
+          git diff --quiet "$env:GITHUB_SHA" FETCH_HEAD -- valve-control .github/workflows/windows-exe.yml .gitattributes
+          if ($LASTEXITCODE -eq 1) { throw 'Source changed during the build; refusing stale release publication.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Could not verify the current delivery source.' }
           git merge --ff-only FETCH_HEAD
           if ($LASTEXITCODE -ne 0) { throw 'The branch advanced incompatibly; refusing to replace it.' }
           Copy-Item -LiteralPath $statusSource -Destination 'windows-build.json'
           git add -- windows-build.json
           if ($result.status -eq 'passed') {
-            Copy-Item -LiteralPath $zipSource -Destination 'valve-control-windows-1.0.1.zip'
-            git add -- valve-control-windows-1.0.1.zip
+            Copy-Item -LiteralPath $zipSource -Destination 'valve-control-windows-1.1.0.zip'
+            git add -- valve-control-windows-1.1.0.zip
+          } else {
+            # Remove only this version's stale success; retain earlier releases.
+            git rm --ignore-unmatch -- valve-control-windows-1.1.0.zip
+            if ($LASTEXITCODE -ne 0) { throw 'Could not remove a stale release archive.' }
           }
           git diff --cached --quiet
           if ($LASTEXITCODE -eq 0) { exit 0 }
           if ($LASTEXITCODE -ne 1) { throw 'Could not inspect generated release changes.' }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Publish Windows 1.0.1 build report and validated executable'
+          git commit -m 'Publish Windows 1.1.0 build report and validated executable'
           if ($LASTEXITCODE -ne 0) { throw 'Could not commit the release results.' }
           git push origin 'HEAD:refs/heads/delivery/valve-control-1.0'
           if ($LASTEXITCODE -ne 0) { throw 'Could not push the release results.' }

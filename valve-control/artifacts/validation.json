@@ -1,15 +1,21 @@
 {
   "status": "passed",
   "checks": [
-    "20 initial valves are closed",
-    "initial closed marker is red",
-    "real canvas click opens and paints green",
-    "second real canvas click closes and paints red",
+    "reference diagram starts with mixed pictured valve states",
+    "reference source image is loaded without modifying its file",
+    "normal canvas contains only the rendered diagram image",
+    "initial pictured lever is green and parallel to its horizontal pipe",
+    "horizontal pictured lever closes red and perpendicular on real click",
+    "click redraw changes only the selected pictured valve region",
+    "horizontal pictured lever opens green and parallel on second click",
+    "pictured lever tip is clickable beyond the valve body",
     "background click does not toggle a valve",
-    "neighboring valve remains independently closed",
-    "nearest hit selects adjacent valve independently",
+    "neighboring pictured valve keeps its independent open state",
+    "nearest pictured hit selects adjacent valve independently",
     "minimum size keeps properties and operation log visible",
-    "minimum-size resize preserves click and overlay alignment",
+    "minimum-size resize preserves pictured lever click alignment",
+    "vertical pictured lever closes red and perpendicular to vertical pipe",
+    "vertical pictured lever opens green and parallel to vertical pipe",
     "editing drag changes position without changing state",
     "editing drag never places valve outside image",
     "real canvas add creates one selected valve",
@@ -19,6 +25,8 @@
     "delete removes selected valve and updates count",
     "transparent image uses white preserves colors and source bytes",
     "portrait image letterboxing preserves normalized click alignment",
+    "detector imports only elongated pictured levers and preserves source bytes",
+    "detected lever rotation removes the original color without a ghost",
     "project save clears dirty and records path",
     "project embeds its background image",
     "portable project reopens image positions properties and current states",
@@ -30,6 +38,7 @@
     "layout export preserves positions but starts all valves closed",
     "invalid layout rejects without losing active project",
     "enormous integer coordinate rejects without overflow or state loss",
+    "invalid lever visual metadata rejects without losing active picture",
     "state export records actual simulation states",
     "atomic save failure preserves existing project and active state",
     "cancel discard preserves unsaved work",
@@ -38,11 +47,12 @@
     "cancel save dialog prevents discarding unsaved changes",
     "save choice writes project before allowing replacement",
     "saved layout imports with closed initial states",
+    "legacy schema without visual metadata loads as pictured valves",
     "zero-valve layout safely supports selection and canvas clicks",
     "canvas add recovers from a zero-valve layout",
     "all GUI callbacks completed without exceptions"
   ],
-  "count": 40,
+  "count": 50,
   "python": "3.13.5",
   "pillow": "12.3.0",
   "tk": "8.6.16",
@@ -50,5 +60,11 @@
     "implementation_closed.png",
     "implementation_open.png"
   ],
-  "original_attachment_tested": false
+  "original_attachment_tested": true,
+  "reference_image_size": [
+    1670,
+    942
+  ],
+  "reference_valve_count": 21,
+  "reference_open_count": 12
 }
