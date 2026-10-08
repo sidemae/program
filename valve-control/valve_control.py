@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from copy import deepcopy
 from datetime import datetime
 import io
@@ -16,7 +17,7 @@ import tkinter as tk
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 import zipfile
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageTk
+from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps, ImageTk
 
 import valve_render
 
@@ -113,7 +114,8 @@ def validate(data):
             raise ValueError("밸브 좌표는 0~1 사이여야 합니다.")
         if "visual" in v:
             visual = v["visual"]
-            if not isinstance(visual, dict) or set(visual) != {"pivot_offset", "length", "thickness", "side", "body"}:
+            required_visual = {"pivot_offset", "length", "thickness", "side", "body"}
+            if not isinstance(visual, dict) or not required_visual.issubset(visual) or set(visual) - required_visual - {"artwork", "turn"}:
                 raise ValueError("밸브 손잡이 정보가 잘못되었습니다.")
             offset = visual["pivot_offset"]
             if not isinstance(offset, list) or len(offset) != 2 or not all(type(n) in (int, float) and -0.25 <= n <= 0.25 and math.isfinite(n) for n in offset):
@@ -122,6 +124,28 @@ def validate(data):
                 raise ValueError("밸브 손잡이 크기를 확인하세요.")
             if type(visual["side"]) is not int or visual["side"] not in (-1, 1) or type(visual["body"]) is not bool:
                 raise ValueError("밸브 손잡이 방향을 확인하세요.")
+            if "turn" in visual and (type(visual["turn"]) is not int or visual["turn"] not in (-1, 1)):
+                raise ValueError("손잡이 회전 방향을 확인하세요.")
+            if "artwork" in visual:
+                artwork = visual["artwork"]
+                if not isinstance(artwork, dict) or set(artwork) != {"png", "size", "offset", "opened", "axis"}:
+                    raise ValueError("원본 손잡이 이미지 형식을 확인하세요.")
+                if type(artwork["opened"]) is not bool or artwork["axis"] not in ("horizontal", "vertical"):
+                    raise ValueError("원본 손잡이 상태를 확인하세요.")
+                for key, lower in (("size", 0), ("offset", -0.5)):
+                    values = artwork[key]
+                    if not isinstance(values, list) or len(values) != 2 or not all(type(n) in (int, float) and lower <= n <= 0.5 and math.isfinite(n) for n in values):
+                        raise ValueError("원본 손잡이 이미지 위치를 확인하세요.")
+                if min(artwork["size"]) <= 0 or not isinstance(artwork["png"], str) or len(artwork["png"]) > 150_000:
+                    raise ValueError("원본 손잡이 이미지 크기를 확인하세요.")
+                try:
+                    data = base64.b64decode(artwork["png"], validate=True)
+                    with Image.open(io.BytesIO(data)) as sprite:
+                        if sprite.format != "PNG" or sprite.mode != "RGBA" or max(sprite.size) > 512:
+                            raise ValueError("원본 손잡이 PNG를 확인하세요.")
+                        sprite.verify()
+                except (OSError, ValueError) as exc:
+                    raise ValueError("원본 손잡이 PNG를 확인하세요.") from exc
         seen.add(v["id"])
     return deepcopy(rows)
 
@@ -167,7 +191,7 @@ class App(tk.Tk):
         self.rendered_image, self.scene_key = None, None
         self.transform = (0., 0., 1600., 900.)
         self.editing, self.show_ids = tk.BooleanVar(), tk.BooleanVar(value=False)
-        self.name_var, self.axis_var = tk.StringVar(), tk.StringVar()
+        self.id_var, self.name_var, self.axis_var = tk.StringVar(), tk.StringVar(), tk.StringVar()
         self.status, self.counts = tk.StringVar(), tk.StringVar()
         self.build_ui()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -183,7 +207,7 @@ class App(tk.Tk):
         style.configure("TButton", padding=(7, 6))
         style.configure("Treeview", font=self.ui_font, rowheight=29)
         menu, file_menu = tk.Menu(self), tk.Menu(self, tearoff=False)
-        for name, action in [("이미지 열기", self.image_dialog), ("프로젝트 열기", self.open_dialog),
+        for name, action in [("기본 도면 열기", self.reference_dialog), ("이미지 열기", self.image_dialog), ("프로젝트 열기", self.open_dialog),
                              ("프로젝트 저장", self.save_dialog), ("다른 이름으로 저장", lambda: self.save_dialog(True)),
                              ("배치 JSON 불러오기", lambda: self.json_dialog("load")),
                              ("배치 JSON 저장 (초기 상태 닫힘)", lambda: self.json_dialog("layout")),
@@ -197,7 +221,7 @@ class App(tk.Tk):
         tk.Label(top, text="상태 시뮬레이션", bg="#102a3c", fg="#fbbf24", font=self.ui_font).pack(side="right")
         bar = ttk.Frame(self, padding=10)
         bar.pack(fill="x")
-        for text, action in [("이미지 열기", self.image_dialog), ("프로젝트 열기", self.open_dialog), ("저장", self.save_dialog)]:
+        for text, action in [("기본 도면", self.reference_dialog), ("이미지 열기", self.image_dialog), ("프로젝트 열기", self.open_dialog), ("저장", self.save_dialog)]:
             ttk.Button(bar, text=text, command=action).pack(side="left", padx=3)
         ttk.Checkbutton(bar, text="위치 편집", variable=self.editing, command=self.mode_changed).pack(side="left", padx=12)
         ttk.Checkbutton(bar, text="편집 시 ID 표시", variable=self.show_ids, command=self.draw).pack(side="left")
@@ -212,8 +236,8 @@ class App(tk.Tk):
         ttk.Label(side, text="밸브 상태 · 목록 더블클릭으로 전환", font=self.ui_font).pack(anchor="w", pady=5)
         frame = ttk.Frame(side)
         frame.pack(fill="both", expand=True)
-        self.tree = ttk.Treeview(frame, columns=("name", "state"), show="tree headings", height=8)
-        for key, label, width in [("#0", "ID", 48), ("name", "위치 / 이름", 178), ("state", "상태", 62)]:
+        self.tree = ttk.Treeview(frame, columns=("name", "state"), show="tree headings", height=6)
+        for key, label, width in [("#0", "ID", 48), ("name", "위치 / 설명", 178), ("state", "상태", 62)]:
             self.tree.heading(key, text=label)
             self.tree.column(key, width=width, stretch=key == "name")
         scrollbar = ttk.Scrollbar(frame, command=self.tree.yview)
@@ -225,12 +249,16 @@ class App(tk.Tk):
         self.tree.bind("<<TreeviewSelect>>", self.select)
         self.tree.bind("<Double-1>", self.list_toggle)
         self.tree.bind("<space>", lambda e: self.toggle())
-        ttk.Label(side, text="선택 밸브 이름", font=self.ui_font).pack(anchor="w", pady=(10, 3))
+        id_editor = ttk.Frame(side)
+        id_editor.pack(fill="x", pady=(10, 4))
+        ttk.Label(id_editor, text="밸브 ID", font=self.ui_font).pack(side="left", padx=(0, 8))
+        ttk.Entry(id_editor, textvariable=self.id_var).pack(side="left", fill="x", expand=True)
+        ttk.Label(side, text="설명 / 위치 이름", font=self.ui_font).pack(anchor="w", pady=(2, 3))
         ttk.Entry(side, textvariable=self.name_var).pack(fill="x")
         props = ttk.Frame(side)
         props.pack(fill="x", pady=5)
         ttk.Combobox(props, textvariable=self.axis_var, values=("horizontal", "vertical"), state="readonly", width=12).pack(side="left")
-        ttk.Button(props, text="이름·방향 적용", command=lambda: self.guard(self.apply_properties)).pack(side="right")
+        ttk.Button(props, text="변경 적용", command=lambda: self.guard(self.apply_properties)).pack(side="right")
         actions = ttk.Frame(side)
         actions.pack(fill="x", pady=3)
         ttk.Button(actions, text="밸브 추가", command=self.begin_add).pack(side="left")
@@ -265,17 +293,19 @@ class App(tk.Tk):
         for item in self.tree.get_children():
             if item not in ids:
                 self.tree.delete(item)
-        for v in self.valves:
+        for index, v in enumerate(self.valves):
             fields = dict(text=v["id"], values=(v["name"], "열림" if v["opened"] else "닫힘"), tags=("open" if v["opened"] else "closed",))
             if self.tree.exists(v["id"]):
                 self.tree.item(v["id"], **fields)
             else:
                 self.tree.insert("", "end", iid=v["id"], **fields)
+            self.tree.move(v["id"], "", index)
         if self.selected not in ids:
             self.selected = self.valves[0]["id"] if self.valves else None
         if self.selected:
             self.tree.selection_set(self.selected)
         v = self.current()
+        self.id_var.set(v["id"] if v else "")
         self.name_var.set(v["name"] if v else "")
         self.axis_var.set(v["axis"] if v else "horizontal")
         n = sum(v["opened"] for v in self.valves)
@@ -434,14 +464,25 @@ class App(tk.Tk):
         v, name, axis = self.current(), self.name_var.get().strip(), self.axis_var.get()
         if not v:
             return
+        identifier = self.id_var.get().strip()
+        if not identifier or len(identifier) > 200:
+            raise ValueError("밸브 ID는 1~200자로 입력하세요.")
+        if any(row is not v and row["id"] == identifier for row in self.valves):
+            raise ValueError("이미 사용 중인 밸브 ID입니다. 다른 ID를 입력하세요.")
         if not name or len(name) > 200 or axis not in ("horizontal", "vertical"):
-            raise ValueError("이름(1~200자)과 배관 방향을 확인하세요.")
-        if (v["name"], v["axis"]) != (name, axis):
-            if axis != v["axis"] and "visual" in v:
+            raise ValueError("설명(1~200자)과 배관 방향을 확인하세요.")
+        if (v["id"], v["name"], v["axis"]) != (identifier, name, axis):
+            if axis != v["axis"] and "visual" in v and "artwork" not in v["visual"]:
                 dx, dy = v["visual"]["pivot_offset"]
                 distance = max(abs(dx * self.background.width), abs(dy * self.background.height))
                 v["visual"]["pivot_offset"] = [0, -distance / self.background.height] if axis == "horizontal" else [-distance / self.background.width, 0]
-            v["name"], v["axis"] = name, axis
+            previous_id = v["id"]
+            v["id"], v["name"], v["axis"] = identifier, name, axis
+            self.selected = identifier
+            if self.drag_id == previous_id:
+                self.drag_id = identifier
+            if previous_id != identifier:
+                self.log.insert(0, f"{datetime.now().astimezone():%H:%M:%S}  ID 변경: {previous_id} → {identifier}")
             self.mark_dirty()
             self.sync()
 
@@ -514,6 +555,21 @@ class App(tk.Tk):
         if path and self.confirm_discard():
             self.guard(lambda: self.load_image(path))
 
+    def reference_dialog(self):
+        if not self.confirm_discard():
+            return
+        background, rows, reference = initial_scene()
+        if not reference:
+            messagebox.showerror("기본 도면 없음", "내장 도면 파일을 확인하세요.", parent=self)
+            return
+        self.background, self.valves, self.reference_loaded = background, rows, True
+        self.selected, self.project_path, self.dirty = rows[0]["id"], None, False
+        self.editing.set(False)
+        self.log.delete(0, "end")
+        self.mode_changed()
+        self.sync()
+        self.status.set("원본 도면의 밸브 위치와 초기 상태를 불러왔습니다.")
+
     def save_dialog(self, save_as=False):
         path = None if save_as else self.project_path
         if not path:
@@ -564,6 +620,27 @@ def run_smoke(app, path):
         assert any(v["opened"] for v in app.valves) and any(not v["opened"] for v in app.valves)
         assert all(app.canvas.type(item) == "image" for item in app.canvas.find_all())
         checks.append("mixed default states and image-only canvas")
+        assets = Path(__file__).resolve().parent / "assets"
+        with Image.open(assets / "GC-1512A.png") as original:
+            assert ImageChops.difference(original.convert("RGB"), app.rendered_image).getbbox() is None
+        checks.append("initial original artwork is pixel-identical")
+        registry = json.loads((assets / "registration.json").read_text(encoding="utf-8"))
+        assert len(registry["valves"]) == len(app.valves) == 20
+        assert not any(row["id"] == "V21" for row in app.valves)
+        before = deepcopy(app.valves)
+        for point in registry["valves"]:
+            ox, oy, iw, ih = app.transform
+            cx = ox + point["body"][0] / registry["image_size"][0] * iw
+            cy = oy + point["body"][1] / registry["image_size"][1] * ih
+            for _ in range(2):
+                previous = {row["id"]: row["opened"] for row in app.valves}
+                app.canvas.event_generate("<ButtonPress-1>", x=round(cx), y=round(cy))
+                app.canvas.event_generate("<ButtonRelease-1>", x=round(cx), y=round(cy))
+                app.update()
+                app.draw()
+                assert [row["id"] for row in app.valves if row["opened"] != previous[row["id"]]] == [point["id"]]
+        assert app.valves == before
+        checks.append("all twenty actual source body coordinates click independently")
         v = next(v for v in app.valves if not v["opened"] and v["axis"] == "horizontal")
         x, y = app.screen(v)
         for opened in (True, False):
@@ -583,6 +660,27 @@ def run_smoke(app, path):
             height = max(p[1] for p in points) - min(p[1] for p in points)
             assert (width > height * 2) if opened else (height > width * 2)
             checks.append("pictured lever opens green parallel" if opened else "pictured lever closes red perpendicular")
+        previous_id, previous_row, previous_pixels = v["id"], deepcopy(v), app.rendered_image.tobytes()
+        app.id_var.set("USER-VALVE-001")
+        app.name_var.set("사용자 설명 확인")
+        app.apply_properties()
+        app.update()
+        app.draw()
+        assert v["id"] == "USER-VALVE-001" and v["name"] == "사용자 설명 확인"
+        assert all(v[key] == previous_row[key] for key in ("x", "y", "axis", "opened", "visual"))
+        assert app.rendered_image.tobytes() == previous_pixels
+        assert app.tree.exists(v["id"]) and not app.tree.exists(previous_id)
+        before_duplicate = deepcopy(app.valves)
+        app.id_var.set(next(row["id"] for row in app.valves if row is not v))
+        try:
+            app.apply_properties()
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("duplicate valve ID was accepted")
+        assert app.valves == before_duplicate
+        app.id_var.set(v["id"])
+        checks.append("user ID and description edits preserve geometry and reject duplicate IDs")
         with tempfile.TemporaryDirectory(prefix="valve-smoke-") as folder:
             image = Path(folder) / "image.png"
             rgba = Image.new("RGBA", (240, 180), (0, 0, 0, 0))

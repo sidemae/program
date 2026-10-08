@@ -22,7 +22,7 @@ import zipfile
 
 
 HERE = Path(__file__).resolve().parent
-RELEASE_VERSION = "1.1.0"
+RELEASE_VERSION = "1.1.1"
 ARCHIVE_NAME = f"valve-control-windows-{RELEASE_VERSION}.zip"
 MINIMUM_GUI_CHECKS = 40
 REQUIRED_GUI_PROOFS = {
@@ -32,6 +32,15 @@ REQUIRED_GUI_PROOFS = {
     "vertical pictured lever closes red and perpendicular to vertical pipe",
     "detector imports only elongated pictured levers and preserves source bytes",
     "detected lever rotation removes the original color without a ghost",
+    "initial rendered diagram is pixel-identical to the original source",
+    "all registered valve body coordinates toggle only their own valve at minimum and enlarged sizes",
+    "GAS N2 shared grips are one control without a duplicate V21 image",
+}
+MINIMUM_SMOKE_CHECKS = 8
+REQUIRED_SMOKE_PROOFS = {
+    "initial original artwork is pixel-identical",
+    "all twenty actual source body coordinates click independently",
+    "user ID and description edits preserve geometry and reject duplicate IDs",
 }
 REQUIRED_PILLOW = "12.3.0"
 REQUIRED_PYINSTALLER = "6.22.3"
@@ -56,8 +65,11 @@ def read_passed(path: Path, *, frozen: bool | None = None) -> dict:
     if frozen is not None:
         if result.get("platform") != "Windows" or result.get("frozen") is not frozen:
             raise BuildFailure(f"Expected native Windows/frozen={frozen} proof: {path.name}")
-        if not isinstance(result.get("checks"), list) or not result["checks"]:
-            raise BuildFailure(f"Validation contains no actual checks: {path.name}")
+        checks, count = result.get("checks"), result.get("count")
+        if not isinstance(checks, list) or type(count) is not int or count < MINIMUM_SMOKE_CHECKS or len(checks) != count:
+            raise BuildFailure(f"Expected at least {MINIMUM_SMOKE_CHECKS} matching native smoke checks: {path.name}")
+        if not REQUIRED_SMOKE_PROOFS.issubset(checks):
+            raise BuildFailure(f"Missing source-artwork or actual valve-coordinate smoke proofs: {path.name}")
     return result
 
 
@@ -216,8 +228,8 @@ def build(args) -> int:
             "처음 시작할 때 단일 EXE가 내장 파일을 준비하므로 잠시 기다리세요.\r\n\r\n"
             "밸브를 클릭하면 초록색(열림), 다시 클릭하면 빨간색(닫힘)이 됩니다.\r\n"
             "손잡이 색상과 방향이 바뀌며 밸브 본체가 도면 이미지에 표시됩니다.\r\n"
-            "공유한 PDF의 GC-1512A 원본 도면이 기본 화면에 포함되어 있습니다.\r\n"
-            "원본 녹색 12개와 빨강 9개 손잡이의 초기 상태를 유지합니다.\r\n"
+            "공유한 PDF의 GC-1512A 원본 도면과 제목 표기가 기본 화면에 포함되어 있습니다.\r\n"
+            "처음 실행하면 원본 손잡이의 모양과 초기 색상을 유지합니다.\r\n"
             "다른 도면은 이미지 열기로 적용하고 위치 편집에서 밸브를 맞추세요.\r\n"
             "프로젝트 저장으로 도면, 밸브 위치, 상태를 함께 보관할 수 있습니다.\r\n"
             "현재 기능은 화면에서 상태를 변경하는 시뮬레이션입니다.\r\n\r\n"

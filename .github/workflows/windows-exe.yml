@@ -8,6 +8,7 @@ on:
     paths:
       - .github/workflows/windows-exe.yml
       - valve-control/*.py
+      - valve-control/assets/**
       - valve-control/requirements.txt
       - valve-control/run_windows.cmd
 
@@ -70,9 +71,9 @@ jobs:
         if: always() && steps.checkout.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: valve-control-windows-1.1.0
+          name: valve-control-windows-1.1.1
           path: |
-            .windows-release/valve-control-windows-1.1.0.zip
+            .windows-release/valve-control-windows-1.1.1.zip
             .windows-release/windows-build.json
             .windows-release/validation.json
             valve-control/artifacts/validation.json
@@ -97,9 +98,9 @@ jobs:
           }
           $statusSource = Join-Path $env:RUNNER_TEMP 'windows-build-to-publish.json'
           Copy-Item -LiteralPath $report -Destination $statusSource
-          $zipSource = Join-Path $env:RUNNER_TEMP 'valve-control-windows-1.1.0.zip'
+          $zipSource = Join-Path $env:RUNNER_TEMP 'valve-control-windows-1.1.1.zip'
           if ($result.status -eq 'passed') {
-            Copy-Item -LiteralPath '.windows-release/valve-control-windows-1.1.0.zip' -Destination $zipSource
+            Copy-Item -LiteralPath '.windows-release/valve-control-windows-1.1.1.zip' -Destination $zipSource
           }
           # Restore only CI-generated changes to tracked source screenshots. The
           # developer's commit is already preserved by checkout and the report.
@@ -117,11 +118,11 @@ jobs:
           Copy-Item -LiteralPath $statusSource -Destination 'windows-build.json'
           git add -- windows-build.json
           if ($result.status -eq 'passed') {
-            Copy-Item -LiteralPath $zipSource -Destination 'valve-control-windows-1.1.0.zip'
-            git add -- valve-control-windows-1.1.0.zip
+            Copy-Item -LiteralPath $zipSource -Destination 'valve-control-windows-1.1.1.zip'
+            git add -- valve-control-windows-1.1.1.zip
           } else {
             # Remove only this version's stale success; retain earlier releases.
-            git rm --ignore-unmatch -- valve-control-windows-1.1.0.zip
+            git rm --ignore-unmatch -- valve-control-windows-1.1.1.zip
             if ($LASTEXITCODE -ne 0) { throw 'Could not remove a stale release archive.' }
           }
           git diff --cached --quiet
@@ -129,7 +130,7 @@ jobs:
           if ($LASTEXITCODE -ne 1) { throw 'Could not inspect generated release changes.' }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Publish Windows 1.1.0 build report and validated executable'
+          git commit -m 'Publish Windows 1.1.1 build report and validated executable'
           if ($LASTEXITCODE -ne 0) { throw 'Could not commit the release results.' }
           git push origin 'HEAD:refs/heads/delivery/valve-control-1.0'
           if ($LASTEXITCODE -ne 0) { throw 'Could not push the release results.' }

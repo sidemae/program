@@ -3,7 +3,10 @@
   "checks": [
     "reference diagram starts with mixed pictured valve states",
     "reference source image is loaded without modifying its file",
+    "initial rendered diagram is pixel-identical to the original source",
     "normal canvas contains only the rendered diagram image",
+    "all registered valve body coordinates toggle only their own valve at minimum and enlarged sizes",
+    "GAS N2 shared grips are one control without a duplicate V21 image",
     "initial pictured lever is green and parallel to its horizontal pipe",
     "horizontal pictured lever closes red and perpendicular on real click",
     "click redraw changes only the selected pictured valve region",
@@ -12,14 +15,16 @@
     "background click does not toggle a valve",
     "neighboring pictured valve keeps its independent open state",
     "nearest pictured hit selects adjacent valve independently",
-    "minimum size keeps properties and operation log visible",
+    "minimum size keeps reference button properties and operation log visible",
     "minimum-size resize preserves pictured lever click alignment",
     "vertical pictured lever closes red and perpendicular to vertical pipe",
     "vertical pictured lever opens green and parallel to vertical pipe",
     "editing drag changes position without changing state",
     "editing drag never places valve outside image",
     "real canvas add creates one selected valve",
-    "property editor renames valve and changes axis",
+    "property editor updates description and changes axis",
+    "valve ID and description edits survive project roundtrip without moving the valve",
+    "duplicate valve ID is rejected without changing model picture list or log",
     "editing mode protects state from toggle controls",
     "real list double-click toggles added valve and updates counts",
     "delete removes selected valve and updates count",
@@ -52,7 +57,7 @@
     "canvas add recovers from a zero-valve layout",
     "all GUI callbacks completed without exceptions"
   ],
-  "count": 50,
+  "count": 55,
   "python": "3.13.5",
   "pillow": "12.3.0",
   "tk": "8.6.16",
@@ -65,6 +70,13 @@
     1670,
     942
   ],
-  "reference_valve_count": 21,
-  "reference_open_count": 12
+  "reference_valve_count": 20,
+  "reference_open_count": 12,
+  "registered_body_clicks": {
+    "valves": 20,
+    "window_sizes": [
+      "1080x760",
+      "1440x950"
+    ]
+  }
 }

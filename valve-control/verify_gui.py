@@ -1,7 +1,9 @@
 """Exercise the real Tk application and capture reproducible verification results."""
 from __future__ import annotations
 
+import base64
 import copy
+import io
 import json
 import os
 import platform
@@ -70,6 +72,7 @@ def main():
             initial_open_count = sum(row["opened"] for row in app.valves)
             reference_path = HERE / "assets" / "GC-1512A.png"
             reference_bytes = reference_path.read_bytes() if reference_path.exists() else None
+            registration = json.loads((HERE / "assets" / "registration.json").read_text(encoding="utf-8"))
 
             def check(name, condition):
                 if not condition:
@@ -107,10 +110,60 @@ def main():
             def only_picture():
                 return [app.canvas.type(item) for item in app.canvas.find_all()] == ["image"]
 
+            def child_widgets(widget):
+                for child in widget.winfo_children():
+                    yield child
+                    yield from child_widgets(child)
+
+            def source_screen(point):
+                ox, oy, image_width, image_height = app.transform
+                source_width, source_height = registration["image_size"]
+                return ox + point[0] * image_width / source_width, oy + point[1] * image_height / source_height
+
             def is_color(pixel, color):
                 red, green, blue = pixel[:3]
                 return (green > 60 and green > red * 1.25 and green > blue * 1.25
                         if color == "green" else red > 80 and red > green * 1.4 and red > blue * 1.4)
+
+            def artwork_points(row):
+                visual = row.get("visual", {})
+                artwork = visual.get("artwork")
+                if not artwork:
+                    return None
+                width, height = app.background.size
+                with Image.open(io.BytesIO(base64.b64decode(artwork["png"]))) as source:
+                    sprite = source.convert("RGBA")
+                color = "green" if artwork["opened"] else "red"
+                points = [(x, y) for y in range(sprite.height) for x in range(sprite.width)
+                          if sprite.getpixel((x, y))[3] and is_color(sprite.getpixel((x, y)), color)]
+                if not points:
+                    return None
+                dx, dy = visual["pivot_offset"]
+                pivot_x, pivot_y = (row["x"] + dx) * width, (row["y"] + dy) * height
+                scale_x = artwork["size"][0] * width / sprite.width
+                scale_y = artwork["size"][1] * height / sprite.height
+                relative = [(artwork["offset"][0] * width + x * scale_x,
+                             artwork["offset"][1] * height + y * scale_y) for x, y in points]
+                mean_x = sum(x for x, _ in relative) / len(relative)
+                mean_y = sum(y for _, y in relative) / len(relative)
+                quarter = 0
+                if row["opened"] != artwork["opened"] or row["axis"] != artwork["axis"]:
+                    if row["axis"] == artwork["axis"] and "turn" in visual:
+                        quarter = visual["turn"]
+                    else:
+                        source_direction = (1 if mean_x >= 0 else -1, 0) if abs(mean_x) > abs(mean_y) else (0, 1 if mean_y >= 0 else -1)
+                        horizontal = (row["axis"] == "horizontal") == row["opened"]
+                        target = (visual.get("side", 1), 0) if horizontal else (0, -1)
+                        candidates = ((0, source_direction), (1, (source_direction[1], -source_direction[0])),
+                                      (-1, (-source_direction[1], source_direction[0])), (2, (-source_direction[0], -source_direction[1])))
+                        quarter = next((turn for turn, direction in candidates if direction == target), 0)
+                if quarter == 1:
+                    relative = [(y, -x) for x, y in relative]
+                elif quarter == -1:
+                    relative = [(-y, x) for x, y in relative]
+                elif quarter == 2:
+                    relative = [(-x, -y) for x, y in relative]
+                return pivot_x, pivot_y, [(pivot_x + x, pivot_y + y) for x, y in relative]
 
             def lever_region(row):
                 width, height = app.background.size
@@ -118,6 +171,12 @@ def main():
                 dx, dy = visual.get("pivot_offset", (0, 0))
                 x, y = (row["x"] + dx) * width, (row["y"] + dy) * height
                 radius = visual.get("length", 0.035) * width + visual.get("thickness", 0.005) * width * 2 + 5
+                artwork = visual.get("artwork")
+                if artwork:
+                    offset_x, offset_y = artwork["offset"][0] * width, artwork["offset"][1] * height
+                    sprite_width, sprite_height = artwork["size"][0] * width, artwork["size"][1] * height
+                    radius = max(radius, abs(offset_x), abs(offset_x + sprite_width),
+                                 abs(offset_y), abs(offset_y + sprite_height)) + 3
                 return (max(0, int(x - radius)), max(0, int(y - radius)),
                         min(width, int(x + radius + 1)), min(height, int(y + radius + 1)))
 
@@ -144,13 +203,19 @@ def main():
                     components.append(component)
                 width, height = app.background.size
                 visual = row.get("visual", {})
-                dx, dy = visual.get("pivot_offset", (0, 0))
-                target_x, target_y = (row["x"] + dx) * width - left, (row["y"] + dy) * height - top
-                distance = visual.get("length", 0.036) * width * 0.55
-                if (row["axis"] == "horizontal") == row["opened"]:
-                    target_x += visual.get("side", 1) * distance
+                posed = artwork_points(row)
+                if posed:
+                    _, _, pixels = posed
+                    target_x = sum(x for x, _ in pixels) / len(pixels) - left
+                    target_y = sum(y for _, y in pixels) / len(pixels) - top
                 else:
-                    target_y -= distance
+                    dx, dy = visual.get("pivot_offset", (0, 0))
+                    target_x, target_y = (row["x"] + dx) * width - left, (row["y"] + dy) * height - top
+                    distance = visual.get("length", 0.036) * width * 0.55
+                    if (row["axis"] == "horizontal") == row["opened"]:
+                        target_x += visual.get("side", 1) * distance
+                    else:
+                        target_y -= distance
                 points = min(components, key=lambda component: min((x - target_x) ** 2 + (y - target_y) ** 2
                                                                  for x, y in component))
                 if min((x - target_x) ** 2 + (y - target_y) ** 2 for x, y in points) > 100:
@@ -168,6 +233,14 @@ def main():
 
             def lever_tip(row):
                 width, height = app.background.size
+                posed = artwork_points(row)
+                if posed:
+                    pivot_x, pivot_y, pixels = posed
+                    ordered = sorted(pixels, key=lambda point: (point[0] - pivot_x) ** 2 + (point[1] - pivot_y) ** 2)
+                    tip_points = ordered[-max(1, len(ordered) // 10):]
+                    x = sum(point[0] for point in tip_points) / len(tip_points)
+                    y = sum(point[1] for point in tip_points) / len(tip_points)
+                    return app.screen(dict(x=x / width, y=y / height))
                 visual = row["visual"]
                 dx, dy = visual["pivot_offset"]
                 x, y = (row["x"] + dx) * width, (row["y"] + dy) * height
@@ -196,9 +269,50 @@ def main():
                   and f"닫힘 {initial_count - initial_open_count}" in app.counts.get())
             with Image.open(reference_path) as reference_image:
                 reference_size = reference_image.size
+                reference_rgb = reference_image.convert("RGB")
             check("reference source image is loaded without modifying its file", app.background.size == reference_size
                   and app.reference_loaded and reference_path.read_bytes() == reference_bytes)
+            check("initial rendered diagram is pixel-identical to the original source", app.rendered_image.size == reference_rgb.size
+                  and app.rendered_image.tobytes() == reference_rgb.tobytes())
             check("normal canvas contains only the rendered diagram image", only_picture())
+            source_width, source_height = registration["image_size"]
+            registered_ids = {entry["id"] for entry in registration["valves"]}
+            body_proof = len(registered_ids) == 20 and registered_ids == {row["id"] for row in app.valves}
+            for geometry in ("1080x760", "1440x950"):
+                app.geometry(geometry)
+                settle()
+                for entry in registration["valves"]:
+                    row = valve(entry["id"])
+                    if abs(row["x"] * source_width - entry["body"][0]) > 0.01 or abs(row["y"] * source_height - entry["body"][1]) > 0.01:
+                        raise AssertionError(f"{entry['id']} model body is not registered to its measured source body")
+                    before_states = {v["id"]: v["opened"] for v in app.valves}
+                    coordinates = source_screen(entry["body"])
+                    press(*coordinates)
+                    after_states = {v["id"]: v["opened"] for v in app.valves}
+                    expected_states = dict(before_states)
+                    expected_states[entry["id"]] = not expected_states[entry["id"]]
+                    if after_states != expected_states:
+                        raise AssertionError(f"Independent source body click failed for {entry['id']} at {geometry}")
+                    press(*coordinates)
+                    if {v["id"]: v["opened"] for v in app.valves} != before_states:
+                        raise AssertionError(f"Independent source body second click failed for {entry['id']} at {geometry}")
+                    if app.rendered_image.tobytes() != reference_rgb.tobytes():
+                        raise AssertionError(f"{entry['id']} body-click cycle does not restore the original source pixels")
+            check("all registered valve body coordinates toggle only their own valve at minimum and enlarged sizes", body_proof and only_picture())
+            n2 = next(entry for entry in registration["valves"] if entry["id"] == "V08")
+            n2_regions = [n2["lever_bounds"], *n2["additional_lever_bounds"]]
+            n2_exact = all(app.rendered_image.crop(box).tobytes() == reference_rgb.crop(box).tobytes() for box in n2_regions)
+            before_n2 = {row["id"]: row["opened"] for row in app.valves}
+            press(*source_screen(n2["body"]))
+            grouped_changed = all(ImageChops.difference(reference_rgb.crop(box), app.rendered_image.crop(box)).getbbox()
+                                  is not None for box in n2_regions)
+            after_n2 = {row["id"]: row["opened"] for row in app.valves}
+            expected_n2 = dict(before_n2)
+            expected_n2["V08"] = not expected_n2["V08"]
+            press(*source_screen(n2["body"]))
+            check("GAS N2 shared grips are one control without a duplicate V21 image", n2_exact and grouped_changed
+                  and after_n2 == expected_n2 and "V21" not in after_n2 and len(app.valves) == 20
+                  and app.rendered_image.tobytes() == reference_rgb.tobytes())
             check("initial pictured lever is green and parallel to its horizontal pipe", lever_matches(valve("V01")))
             capture("implementation_closed.png")
             untouched = app.rendered_image.copy()
@@ -225,7 +339,14 @@ def main():
             check("nearest pictured hit selects adjacent valve independently", not valve("V09")["opened"] and not valve("V10")["opened"])
             app.geometry("1080x760")
             settle()
-            check("minimum size keeps properties and operation log visible", app.log.winfo_ismapped()
+            reference_buttons = [widget for widget in child_widgets(app)
+                                 if widget.winfo_class() == "TButton" and widget.cget("text") == "기본 도면"]
+            check("minimum size keeps reference button properties and operation log visible", len(reference_buttons) == 1
+                  and reference_buttons[0].winfo_ismapped()
+                  and reference_buttons[0].winfo_width() >= reference_buttons[0].winfo_reqwidth()
+                  and reference_buttons[0].winfo_rootx() >= app.winfo_rootx()
+                  and reference_buttons[0].winfo_rootx() + reference_buttons[0].winfo_width() <= app.winfo_rootx() + app.winfo_width()
+                  and app.log.winfo_ismapped()
                   and app.log.winfo_rooty() + app.log.winfo_height() <= app.winfo_rooty() + app.winfo_height())
             click("V06")
             check("minimum-size resize preserves pictured lever click alignment", valve("V06")["opened"]
@@ -266,12 +387,46 @@ def main():
             check("real canvas add creates one selected valve", len(added_ids) == 1
                   and len(app.valves) == initial_count + 1 and app.selected in added_ids)
             added_id = next(iter(added_ids))
-            app.name_var.set("검증용 새 밸브")
+            previous_added_id = added_id
+            before_properties = copy.deepcopy(valve(added_id))
+            app.id_var.set("TEST-VALVE-A")
+            app.name_var.set("검증용 새 밸브 / 사용자 설명")
             app.axis_var.set("vertical")
             app.apply_properties()
+            added_id = "TEST-VALVE-A"
             settle()
-            check("property editor renames valve and changes axis", valve(added_id)["name"] == "검증용 새 밸브"
+            check("property editor updates description and changes axis", valve(added_id)["name"] == "검증용 새 밸브 / 사용자 설명"
                   and valve(added_id)["axis"] == "vertical")
+            editor_rekeyed = app.selected == added_id and app.tree.exists(added_id) and not app.tree.exists(previous_added_id)
+            edited_row = copy.deepcopy(valve(added_id))
+            edited_project = temp / "edited-id-description.vcp"
+            app.save_project(edited_project)
+            app.load_project(edited_project)
+            settle()
+            restored_edit = valve(added_id)
+            check("valve ID and description edits survive project roundtrip without moving the valve", editor_rekeyed
+                  and restored_edit == edited_row and restored_edit["name"] == "검증용 새 밸브 / 사용자 설명"
+                  and all(restored_edit[key] == before_properties[key] for key in ("x", "y", "opened"))
+                  and restored_edit.get("visual", {}).get("artwork") == before_properties.get("visual", {}).get("artwork")
+                  and app.tree.exists(added_id) and not app.tree.exists(previous_added_id))
+            app.selected = added_id
+            app.sync()
+            settle()
+            before_duplicate = snapshot()
+            before_tree = [(item, app.tree.item(item)) for item in app.tree.get_children()]
+            before_log = app.log.get(0, "end")
+            app.id_var.set("V01")
+            duplicate_rejected = False
+            try:
+                app.apply_properties()
+            except ValueError:
+                duplicate_rejected = True
+            settle()
+            check("duplicate valve ID is rejected without changing model picture list or log", duplicate_rejected
+                  and snapshot() == before_duplicate
+                  and [(item, app.tree.item(item)) for item in app.tree.get_children()] == before_tree
+                  and app.log.get(0, "end") == before_log)
+            app.id_var.set(added_id)
             app.toggle(added_id)
             settle()
             check("editing mode protects state from toggle controls", not valve(added_id)["opened"])
@@ -488,6 +643,7 @@ def main():
                 "reference_image_size": list(reference_size),
                 "reference_valve_count": initial_count,
                 "reference_open_count": initial_open_count,
+                "registered_body_clicks": {"valves": 20, "window_sizes": ["1080x760", "1440x950"]},
             }
             (output / "validation.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"Completed: {len(checks)} meaningful GUI checks passed", flush=True)
