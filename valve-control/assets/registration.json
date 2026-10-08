@@ -1,27 +1,655 @@
 {
-  "image_size": [1670, 942],
+  "image_size": [
+    1670,
+    942
+  ],
   "coordinate_system": "source_pixels",
   "bounds_convention": "left,top,right,bottom; right and bottom are exclusive",
   "valves": [
-    {"id": "V01", "name": "VS-1521 상부 출구", "body": [613, 260], "pivot": [613, 232], "initial_opened": true, "axis": "horizontal", "turn": 1, "lever_bounds": [627, 218, 686, 228]},
-    {"id": "V02", "name": "조절밸브 후단", "body": [806, 260], "pivot": [806, 232], "initial_opened": true, "axis": "horizontal", "turn": 1, "lever_bounds": [822, 219, 880, 228]},
-    {"id": "V03", "name": "상부 주배관 1", "body": [976, 260], "pivot": [976, 232], "initial_opened": true, "axis": "horizontal", "turn": 1, "lever_bounds": [992, 218, 1052, 228]},
-    {"id": "V04", "name": "상부 주배관 2", "body": [1207, 260], "pivot": [1207, 232], "initial_opened": true, "axis": "horizontal", "turn": 1, "lever_bounds": [1224, 218, 1284, 228]},
-    {"id": "V05", "name": "DC-1523 출구", "body": [1389, 260], "pivot": [1389, 232], "initial_opened": true, "axis": "horizontal", "turn": 1, "lever_bounds": [1406, 219, 1465, 228]},
-    {"id": "V06", "name": "GC-1512B 상부 분기", "body": [982, 103], "pivot": [982, 77], "initial_opened": false, "axis": "horizontal", "turn": -1, "lever_bounds": [974, 34, 990, 85]},
-    {"id": "V07", "name": "GC-1512B 중간 분기", "body": [1371, 181], "pivot": [1371, 157], "initial_opened": false, "axis": "horizontal", "turn": -1, "lever_bounds": [1364, 114, 1379, 165]},
-    {"id": "V08", "name": "GAS N2 탱크 유입", "body": [464, 477], "pivot": [435, 476], "initial_opened": false, "axis": "vertical", "turn": 1, "lever_bounds": [391, 470, 440, 483], "additional_lever_bounds": [[427, 417, 437, 465]], "group_note": "두 빨간 손잡이가 같은 금속 관절과 몸통에 연결되어 한 제어 대상으로 움직인다. 별도 V21 제어는 만들지 않는다."},
-    {"id": "V09", "name": "VS-1521 상부 연결 1", "body": [532, 477], "pivot": [504, 477], "initial_opened": true, "axis": "vertical", "turn": 1, "lever_bounds": [493, 417, 502, 465]},
-    {"id": "V10", "name": "VS-1521 상부 연결 2", "body": [565, 477], "pivot": [586, 477], "initial_opened": true, "axis": "vertical", "turn": -1, "lever_bounds": [594, 418, 603, 465]},
-    {"id": "V11", "name": "바이패스 상단", "body": [759, 477], "pivot": [759, 459], "initial_opened": false, "axis": "horizontal", "turn": -1, "lever_bounds": [753, 430, 765, 465]},
-    {"id": "V12", "name": "압축기 유입", "body": [861, 554], "pivot": [861, 528], "initial_opened": true, "axis": "horizontal", "turn": -1, "lever_bounds": [819, 516, 854, 525]},
-    {"id": "V13", "name": "바이패스 세로 연결", "body": [717, 602], "pivot": [692, 602], "initial_opened": true, "axis": "vertical", "turn": 1, "lever_bounds": [680, 546, 688, 593]},
-    {"id": "V14", "name": "하부 주배관", "body": [718, 699], "pivot": [740, 699], "initial_opened": false, "axis": "vertical", "turn": 1, "lever_bounds": [733, 693, 783, 706]},
-    {"id": "V15", "name": "바이패스 하단", "body": [758, 790], "pivot": [758, 772], "initial_opened": false, "axis": "horizontal", "turn": -1, "lever_bounds": [752, 744, 765, 780]},
-    {"id": "V16", "name": "GC-1512B 하부 출구", "body": [901, 875], "pivot": [901, 854], "initial_opened": false, "axis": "horizontal", "turn": -1, "lever_bounds": [893, 816, 909, 862]},
-    {"id": "V17", "name": "VS-1521 드레인", "body": [514, 873], "pivot": [535, 873], "initial_opened": false, "axis": "vertical", "turn": 1, "lever_bounds": [528, 867, 576, 880]},
-    {"id": "V18", "name": "SR-1331 탱크 유입", "body": [400, 736], "pivot": [401, 709], "initial_opened": true, "axis": "horizontal", "turn": -1, "lever_bounds": [352, 696, 393, 704]},
-    {"id": "V19", "name": "SC-1811 세로 분기", "body": [253, 652], "pivot": [280, 652], "initial_opened": true, "axis": "vertical", "turn": -1, "lever_bounds": [282, 599, 291, 642]},
-    {"id": "V20", "name": "압축기 상부 연결", "body": [1307, 503], "pivot": [1276, 500], "initial_opened": true, "axis": "vertical", "turn": 1, "lever_bounds": [1262, 436, 1272, 487]}
+    {
+      "id": "V01",
+      "name": "VS-1521 상부 출구",
+      "body": [
+        613,
+        260
+      ],
+      "pivot": [
+        613,
+        232
+      ],
+      "initial_opened": true,
+      "axis": "horizontal",
+      "turn": 1,
+      "lever_bounds": [
+        627,
+        218,
+        686,
+        228
+      ]
+    },
+    {
+      "id": "V02",
+      "name": "조절밸브 후단",
+      "body": [
+        806,
+        260
+      ],
+      "pivot": [
+        806,
+        232
+      ],
+      "initial_opened": true,
+      "axis": "horizontal",
+      "turn": 1,
+      "lever_bounds": [
+        822,
+        219,
+        880,
+        228
+      ]
+    },
+    {
+      "id": "V03",
+      "name": "상부 주배관 1",
+      "body": [
+        976,
+        260
+      ],
+      "pivot": [
+        976,
+        232
+      ],
+      "initial_opened": true,
+      "axis": "horizontal",
+      "turn": 1,
+      "lever_bounds": [
+        992,
+        218,
+        1052,
+        228
+      ]
+    },
+    {
+      "id": "V04",
+      "name": "상부 주배관 2",
+      "body": [
+        1207,
+        260
+      ],
+      "pivot": [
+        1207,
+        232
+      ],
+      "initial_opened": true,
+      "axis": "horizontal",
+      "turn": 1,
+      "lever_bounds": [
+        1224,
+        218,
+        1284,
+        228
+      ]
+    },
+    {
+      "id": "V05",
+      "name": "DC-1523 출구",
+      "body": [
+        1389,
+        260
+      ],
+      "pivot": [
+        1389,
+        232
+      ],
+      "initial_opened": true,
+      "axis": "horizontal",
+      "turn": 1,
+      "lever_bounds": [
+        1406,
+        219,
+        1465,
+        228
+      ]
+    },
+    {
+      "id": "V06",
+      "name": "GC-1512B 상부 분기",
+      "body": [
+        982,
+        103
+      ],
+      "pivot": [
+        982,
+        77
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "turn": -1,
+      "lever_bounds": [
+        974,
+        34,
+        990,
+        85
+      ]
+    },
+    {
+      "id": "V07",
+      "name": "GC-1512B 중간 분기",
+      "body": [
+        1371,
+        181
+      ],
+      "pivot": [
+        1371,
+        157
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "turn": -1,
+      "lever_bounds": [
+        1364,
+        114,
+        1379,
+        165
+      ]
+    },
+    {
+      "id": "V08",
+      "name": "GAS N2 탱크 유입",
+      "body": [
+        464,
+        477
+      ],
+      "pivot": [
+        435,
+        476
+      ],
+      "initial_opened": false,
+      "axis": "vertical",
+      "turn": -1,
+      "lever_bounds": [
+        391,
+        470,
+        440,
+        483
+      ],
+      "group_note": "위쪽 중복 손잡이와 연결 팔은 제거하고 왼쪽 빨간 손잡이 하나만 사용한다. 별도 V21 제어는 만들지 않는다.",
+      "removed_lever_bounds": [
+        [
+          427,
+          417,
+          437,
+          465
+        ]
+      ]
+    },
+    {
+      "id": "V09",
+      "name": "VS-1521 상부 연결 1",
+      "body": [
+        532,
+        477
+      ],
+      "pivot": [
+        504,
+        477
+      ],
+      "initial_opened": true,
+      "axis": "vertical",
+      "turn": 1,
+      "lever_bounds": [
+        493,
+        417,
+        502,
+        465
+      ]
+    },
+    {
+      "id": "V10",
+      "name": "VS-1521 상부 연결 2",
+      "body": [
+        565,
+        477
+      ],
+      "pivot": [
+        586,
+        477
+      ],
+      "initial_opened": true,
+      "axis": "vertical",
+      "turn": -1,
+      "lever_bounds": [
+        594,
+        418,
+        603,
+        465
+      ]
+    },
+    {
+      "id": "V11",
+      "name": "바이패스 상단",
+      "body": [
+        759,
+        477
+      ],
+      "pivot": [
+        759,
+        459
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "turn": -1,
+      "lever_bounds": [
+        753,
+        430,
+        765,
+        465
+      ]
+    },
+    {
+      "id": "V12",
+      "name": "압축기 유입",
+      "body": [
+        861,
+        554
+      ],
+      "pivot": [
+        861,
+        528
+      ],
+      "initial_opened": true,
+      "axis": "horizontal",
+      "turn": -1,
+      "lever_bounds": [
+        819,
+        516,
+        854,
+        525
+      ]
+    },
+    {
+      "id": "V13",
+      "name": "바이패스 세로 연결",
+      "body": [
+        717,
+        602
+      ],
+      "pivot": [
+        692,
+        602
+      ],
+      "initial_opened": true,
+      "axis": "vertical",
+      "turn": 1,
+      "lever_bounds": [
+        680,
+        546,
+        688,
+        593
+      ]
+    },
+    {
+      "id": "V14",
+      "name": "하부 주배관",
+      "body": [
+        718,
+        699
+      ],
+      "pivot": [
+        740,
+        699
+      ],
+      "initial_opened": false,
+      "axis": "vertical",
+      "turn": 1,
+      "lever_bounds": [
+        733,
+        693,
+        783,
+        706
+      ]
+    },
+    {
+      "id": "V15",
+      "name": "바이패스 하단",
+      "body": [
+        758,
+        790
+      ],
+      "pivot": [
+        758,
+        772
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "turn": -1,
+      "lever_bounds": [
+        752,
+        744,
+        765,
+        780
+      ]
+    },
+    {
+      "id": "V16",
+      "name": "GC-1512B 하부 출구",
+      "body": [
+        901,
+        875
+      ],
+      "pivot": [
+        901,
+        854
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "turn": -1,
+      "lever_bounds": [
+        893,
+        816,
+        909,
+        862
+      ]
+    },
+    {
+      "id": "V17",
+      "name": "VS-1521 드레인",
+      "body": [
+        514,
+        873
+      ],
+      "pivot": [
+        535,
+        873
+      ],
+      "initial_opened": false,
+      "axis": "vertical",
+      "turn": -1,
+      "lever_bounds": [
+        528,
+        867,
+        576,
+        880
+      ]
+    },
+    {
+      "id": "V18",
+      "name": "SR-1331 탱크 유입",
+      "body": [
+        400,
+        736
+      ],
+      "pivot": [
+        401,
+        709
+      ],
+      "initial_opened": true,
+      "axis": "horizontal",
+      "turn": -1,
+      "lever_bounds": [
+        352,
+        696,
+        393,
+        704
+      ]
+    },
+    {
+      "id": "V19",
+      "name": "SC-1811 세로 분기",
+      "body": [
+        253,
+        652
+      ],
+      "pivot": [
+        280,
+        652
+      ],
+      "initial_opened": true,
+      "axis": "vertical",
+      "turn": -1,
+      "lever_bounds": [
+        282,
+        599,
+        291,
+        642
+      ]
+    },
+    {
+      "id": "V20",
+      "name": "압축기 상부 연결",
+      "body": [
+        1307,
+        503
+      ],
+      "pivot": [
+        1276,
+        500
+      ],
+      "initial_opened": true,
+      "axis": "vertical",
+      "turn": 1,
+      "lever_bounds": [
+        1262,
+        436,
+        1272,
+        487
+      ]
+    },
+    {
+      "id": "CV01",
+      "name": "상부 다이어프램 조절밸브",
+      "body": [
+        715,
+        260
+      ],
+      "pivot": [
+        715,
+        223
+      ],
+      "initial_opened": true,
+      "axis": "horizontal",
+      "kind": "actuator",
+      "actuator_bounds": [
+        671,
+        142,
+        758,
+        229
+      ],
+      "assembly_bounds": [
+        671,
+        142,
+        758,
+        281
+      ],
+      "state_note": "초기 상태는 시뮬레이션 설정이며 실제 장비 상태를 도색으로 판단하지 않는다."
+    },
+    {
+      "id": "AV01",
+      "name": "SC-1811 자동밸브",
+      "body": [
+        205,
+        572
+      ],
+      "pivot": [
+        205,
+        550
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "kind": "actuator",
+      "actuator_bounds": [
+        167,
+        495,
+        245,
+        546
+      ],
+      "assembly_bounds": [
+        167,
+        495,
+        245,
+        590
+      ],
+      "state_note": "초기 상태는 시뮬레이션 설정이며 실제 장비 상태를 도색으로 판단하지 않는다."
+    },
+    {
+      "id": "AV02",
+      "name": "SR-1331 자동밸브",
+      "body": [
+        312,
+        736
+      ],
+      "pivot": [
+        312,
+        717
+      ],
+      "initial_opened": true,
+      "axis": "horizontal",
+      "kind": "actuator",
+      "actuator_bounds": [
+        275,
+        661,
+        350,
+        712
+      ],
+      "assembly_bounds": [
+        275,
+        661,
+        350,
+        755
+      ],
+      "state_note": "초기 상태는 시뮬레이션 설정이며 실제 장비 상태를 도색으로 판단하지 않는다."
+    },
+    {
+      "id": "HV01",
+      "name": "압축기 상부 왼쪽 조작 휠",
+      "body": [
+        1106,
+        601
+      ],
+      "pivot": [
+        1106,
+        601
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "kind": "wheel",
+      "actuator_bounds": [
+        1089,
+        586,
+        1123,
+        616
+      ],
+      "state_note": "초기 닫힘은 시뮬레이션 설정이며 원본 도색으로 실제 장비 상태를 판단하지 않는다."
+    },
+    {
+      "id": "HV02",
+      "name": "압축기 상부 오른쪽 조작 휠",
+      "body": [
+        1388,
+        601
+      ],
+      "pivot": [
+        1388,
+        601
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "kind": "wheel",
+      "actuator_bounds": [
+        1373,
+        586,
+        1403,
+        618
+      ],
+      "state_note": "초기 닫힘은 시뮬레이션 설정이며 원본 도색으로 실제 장비 상태를 판단하지 않는다."
+    },
+    {
+      "id": "HV03",
+      "name": "압축기 하부 왼쪽 조작 휠",
+      "body": [
+        1031,
+        692
+      ],
+      "pivot": [
+        1031,
+        692
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "kind": "wheel",
+      "actuator_bounds": [
+        1018,
+        678,
+        1044,
+        707
+      ],
+      "state_note": "초기 닫힘은 시뮬레이션 설정이며 원본 도색으로 실제 장비 상태를 판단하지 않는다."
+    },
+    {
+      "id": "HV04",
+      "name": "압축기 하부 오른쪽 안쪽 조작 휠",
+      "body": [
+        1432,
+        678
+      ],
+      "pivot": [
+        1432,
+        678
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "kind": "wheel",
+      "actuator_bounds": [
+        1421,
+        669,
+        1443,
+        688
+      ],
+      "state_note": "초기 닫힘은 시뮬레이션 설정이며 원본 도색으로 실제 장비 상태를 판단하지 않는다."
+    },
+    {
+      "id": "HV05",
+      "name": "압축기 하부 오른쪽 바깥쪽 조작 휠",
+      "body": [
+        1528,
+        678
+      ],
+      "pivot": [
+        1528,
+        678
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "kind": "wheel",
+      "actuator_bounds": [
+        1520,
+        669,
+        1536,
+        687
+      ],
+      "state_note": "초기 닫힘은 시뮬레이션 설정이며 원본 도색으로 실제 장비 상태를 판단하지 않는다."
+    },
+    {
+      "id": "HV06",
+      "name": "압축기 중앙 조작 휠",
+      "body": [
+        1282,
+        676
+      ],
+      "pivot": [
+        1282,
+        676
+      ],
+      "initial_opened": false,
+      "axis": "horizontal",
+      "kind": "wheel",
+      "actuator_bounds": [
+        1266,
+        662,
+        1302,
+        694
+      ],
+      "state_note": "초기 닫힘은 시뮬레이션 설정이며 원본 도색으로 실제 장비 상태를 판단하지 않는다."
+    }
   ]
 }

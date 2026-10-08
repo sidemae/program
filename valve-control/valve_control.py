@@ -115,8 +115,10 @@ def validate(data):
         if "visual" in v:
             visual = v["visual"]
             required_visual = {"pivot_offset", "length", "thickness", "side", "body"}
-            if not isinstance(visual, dict) or not required_visual.issubset(visual) or set(visual) - required_visual - {"artwork", "turn"}:
+            if not isinstance(visual, dict) or not required_visual.issubset(visual) or set(visual) - required_visual - {"artwork", "turn", "kind"}:
                 raise ValueError("밸브 손잡이 정보가 잘못되었습니다.")
+            if visual.get("kind", "lever") not in ("lever", "actuator", "wheel"):
+                raise ValueError("밸브 표시 종류를 확인하세요.")
             offset = visual["pivot_offset"]
             if not isinstance(offset, list) or len(offset) != 2 or not all(type(n) in (int, float) and -0.25 <= n <= 0.25 and math.isfinite(n) for n in offset):
                 raise ValueError("밸브 손잡이 축 위치를 확인하세요.")
@@ -128,7 +130,8 @@ def validate(data):
                 raise ValueError("손잡이 회전 방향을 확인하세요.")
             if "artwork" in visual:
                 artwork = visual["artwork"]
-                if not isinstance(artwork, dict) or set(artwork) != {"png", "size", "offset", "opened", "axis"}:
+                required_artwork = {"png", "size", "offset", "opened", "axis"}
+                if not isinstance(artwork, dict) or not required_artwork.issubset(artwork) or set(artwork) - required_artwork - {"moving_png"}:
                     raise ValueError("원본 손잡이 이미지 형식을 확인하세요.")
                 if type(artwork["opened"]) is not bool or artwork["axis"] not in ("horizontal", "vertical"):
                     raise ValueError("원본 손잡이 상태를 확인하세요.")
@@ -139,11 +142,20 @@ def validate(data):
                 if min(artwork["size"]) <= 0 or not isinstance(artwork["png"], str) or len(artwork["png"]) > 150_000:
                     raise ValueError("원본 손잡이 이미지 크기를 확인하세요.")
                 try:
-                    data = base64.b64decode(artwork["png"], validate=True)
-                    with Image.open(io.BytesIO(data)) as sprite:
-                        if sprite.format != "PNG" or sprite.mode != "RGBA" or max(sprite.size) > 512:
+                    source_size = None
+                    for png_key in ("png", "moving_png"):
+                        if png_key not in artwork:
+                            continue
+                        if not isinstance(artwork[png_key], str) or len(artwork[png_key]) > 150_000:
                             raise ValueError("원본 손잡이 PNG를 확인하세요.")
-                        sprite.verify()
+                        data = base64.b64decode(artwork[png_key], validate=True)
+                        with Image.open(io.BytesIO(data)) as sprite:
+                            if sprite.format != "PNG" or sprite.mode != "RGBA" or max(sprite.size) > 512:
+                                raise ValueError("원본 손잡이 PNG를 확인하세요.")
+                            if source_size is not None and sprite.size != source_size:
+                                raise ValueError("회전 손잡이 이미지 크기가 원본과 다릅니다.")
+                            source_size = sprite.size
+                            sprite.verify()
                 except (OSError, ValueError) as exc:
                     raise ValueError("원본 손잡이 PNG를 확인하세요.") from exc
         seen.add(v["id"])
@@ -490,14 +502,25 @@ class App(tk.Tk):
         with Image.open(path) as image:
             rgba = ImageOps.exif_transpose(image).convert("RGBA")
             loaded = Image.alpha_composite(Image.new("RGBA", rgba.size, "white"), rgba).convert("RGB")
-        clean, detected = valve_render.prepare_image(loaded)
+        source_path = Path(__file__).resolve().parent / "assets" / "GC-1512A.png"
+        reference = False
+        if source_path.exists():
+            with Image.open(source_path) as image:
+                source = image.convert("RGB")
+                reference = loaded.size == source.size and loaded.tobytes() == source.tobytes()
+        if reference:
+            clean, detected, _ = initial_scene()
+        else:
+            clean, detected = valve_render.prepare_image(loaded)
+        self.reference_loaded = reference
         self.background, self.cached_size = clean, None
         if detected:
             self.valves, self.selected = detected, detected[0]["id"]
             self.sync()
         self.mark_dirty()
         self.draw()
-        self.status.set(f"{Path(path).name} · 녹색·빨간색 손잡이 {len(detected)}개 인식 · 원본 상태 적용 · 위치 편집으로 확인하세요."
+        self.status.set("기본 도면 · 수동 밸브 20개 · 자동·조절밸브 3개 · 조작 휠 6개 · V08 단일 손잡이 적용"
+                        if reference else f"{Path(path).name} · 녹색·빨간색 손잡이 {len(detected)}개 인식 · 원본 상태 적용 · 위치 편집으로 확인하세요."
                         if detected else f"배경: {Path(path).name} · 인식된 손잡이 없음 · 위치 편집으로 밸브를 맞추세요.")
 
     def document(self, rows=None):
@@ -621,11 +644,12 @@ def run_smoke(app, path):
         assert all(app.canvas.type(item) == "image" for item in app.canvas.find_all())
         checks.append("mixed default states and image-only canvas")
         assets = Path(__file__).resolve().parent / "assets"
-        with Image.open(assets / "GC-1512A.png") as original:
+        with Image.open(assets / "GC-1512A.initial.png") as original:
             assert ImageChops.difference(original.convert("RGB"), app.rendered_image).getbbox() is None
-        checks.append("initial original artwork is pixel-identical")
+        initial_pixels = app.rendered_image.tobytes()
+        checks.append("initial scene matches the corrected single-lever reference")
         registry = json.loads((assets / "registration.json").read_text(encoding="utf-8"))
-        assert len(registry["valves"]) == len(app.valves) == 20
+        assert len(registry["valves"]) == len(app.valves) >= 23
         assert not any(row["id"] == "V21" for row in app.valves)
         before = deepcopy(app.valves)
         for point in registry["valves"]:
@@ -640,7 +664,51 @@ def run_smoke(app, path):
                 app.draw()
                 assert [row["id"] for row in app.valves if row["opened"] != previous[row["id"]]] == [point["id"]]
         assert app.valves == before
-        checks.append("all twenty actual source body coordinates click independently")
+        assert app.rendered_image.tobytes() == initial_pixels
+        checks.append("all registered manual automatic and control valve coordinates click independently")
+        actuator_rows = [v for v in app.valves if v.get("visual", {}).get("kind") == "actuator"]
+        assert {v["id"] for v in actuator_rows} >= {"CV01", "AV01", "AV02"}
+        for actuator in actuator_rows:
+            original_state = actuator["opened"]
+            for opened in (False, True, original_state):
+                actuator["opened"] = opened
+                app.draw()
+                artwork = valve_render._posed_artwork(app.background, actuator)
+                sprite = artwork[0]
+                source_channels = [(r, g, b) for r, g, b, a in sprite.getdata()
+                                   if a and max(r, g, b) - min(r, g, b) >= 35]
+                assert source_channels
+                channel = 1 if opened else 0
+                assert sum(pixel[channel] > max(pixel[(channel+1)%3], pixel[(channel+2)%3]) for pixel in source_channels) > len(source_channels) * .9
+        assert app.rendered_image.tobytes() == initial_pixels
+        checks.append("automatic and control valve actuators turn green and red without rotating their bodies")
+        n2 = next(row for row in app.valves if row["id"] == "V08")
+        for opened in (True, False):
+            n2["opened"] = opened
+            app.draw()
+            sprite, _, _ = valve_render._posed_artwork(app.background, n2)
+            channel = 1 if opened else 0
+            points = [(i % sprite.width, i // sprite.width) for i, pixel in enumerate(sprite.getdata())
+                      if pixel[3] and pixel[channel] > 75
+                      and pixel[channel] > pixel[(channel + 1) % 3] * 1.5
+                      and pixel[channel] > pixel[(channel + 2) % 3] * 1.5]
+            assert points
+            span_x = max(p[0] for p in points) - min(p[0] for p in points) + 1
+            span_y = max(p[1] for p in points) - min(p[1] for p in points) + 1
+            assert span_y > span_x * 2 if opened else span_x > span_y * 2
+        assert app.rendered_image.tobytes() == initial_pixels
+        checks.append("GAS N2 is a single red or green lever without a second branch")
+        clean_pixels = app.background.tobytes()
+        for _ in range(3):
+            for row in app.valves:
+                row["opened"] = not row["opened"]
+                app.draw()
+            for row in reversed(app.valves):
+                row["opened"] = not row["opened"]
+                app.draw()
+            assert app.rendered_image.tobytes() == initial_pixels
+        assert app.background.tobytes() == clean_pixels
+        checks.append("repeated mixed operations restore exact scene pixels and leave the clean background unchanged")
         v = next(v for v in app.valves if not v["opened"] and v["axis"] == "horizontal")
         x, y = app.screen(v)
         for opened in (True, False):
@@ -702,6 +770,8 @@ def run_smoke(app, path):
         result = dict(status="passed", checks=checks, count=len(checks),
                       platform=platform.system(), python=platform.python_version(),
                       tk=app.tk.call("package", "require", "Tk"),
+                      registered_valves=len(registry["valves"]),
+                      actuator_valves=len(actuator_rows),
                       frozen=bool(getattr(sys, "frozen", False)))
         atomic_write(path, lambda p: p.write_text(json.dumps(result, indent=2), encoding="utf-8"))
         return 0

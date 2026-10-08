@@ -71,6 +71,7 @@ def main():
             initial_count = len(app.valves)
             initial_open_count = sum(row["opened"] for row in app.valves)
             reference_path = HERE / "assets" / "GC-1512A.png"
+            initial_path = HERE / "assets" / "GC-1512A.initial.png"
             reference_bytes = reference_path.read_bytes() if reference_path.exists() else None
             registration = json.loads((HERE / "assets" / "registration.json").read_text(encoding="utf-8"))
 
@@ -147,7 +148,7 @@ def main():
                 mean_x = sum(x for x, _ in relative) / len(relative)
                 mean_y = sum(y for _, y in relative) / len(relative)
                 quarter = 0
-                if row["opened"] != artwork["opened"] or row["axis"] != artwork["axis"]:
+                if visual.get("kind") not in ("actuator", "wheel") and (row["opened"] != artwork["opened"] or row["axis"] != artwork["axis"]):
                     if row["axis"] == artwork["axis"] and "turn" in visual:
                         quarter = visual["turn"]
                     else:
@@ -208,6 +209,20 @@ def main():
                     _, _, pixels = posed
                     target_x = sum(x for x, _ in pixels) / len(pixels) - left
                     target_y = sum(y for _, y in pixels) / len(pixels) - top
+                    # A lever may pass behind a fixed valve body. Collect all
+                    # visible fragments inside its independently posed pigment
+                    # bounds instead of requiring one unobstructed component.
+                    pigment_box = (min(x for x, _ in pixels) - left - 2,
+                                   min(y for _, y in pixels) - top - 2,
+                                   max(x for x, _ in pixels) - left + 2,
+                                   max(y for _, y in pixels) - top + 2)
+                    points = [point for component in components for point in component
+                              if pigment_box[0] <= point[0] <= pigment_box[2]
+                              and pigment_box[1] <= point[1] <= pigment_box[3]]
+                    if not points:
+                        return None
+                    return (max(p[0] for p in points) - min(p[0] for p in points) + 1,
+                            max(p[1] for p in points) - min(p[1] for p in points) + 1)
                 else:
                     dx, dy = visual.get("pivot_offset", (0, 0))
                     target_x, target_y = (row["x"] + dx) * width - left, (row["y"] + dy) * height - top
@@ -229,6 +244,16 @@ def main():
                 if not geometry:
                     return False
                 span_x, span_y = geometry
+                posed = artwork_points(row)
+                if posed:
+                    _, _, pixels = posed
+                    intended_x = max(x for x, _ in pixels) - min(x for x, _ in pixels) + 1
+                    intended_y = max(y for _, y in pixels) - min(y for _, y in pixels) + 1
+                    intended_axis = intended_x > 2 * intended_y if horizontal else intended_y > 2 * intended_x
+                    # Fixed chrome may hide most of a correctly rotated grip.
+                    # Its visible fragments must still have the same clear axis.
+                    visible_axis = span_x > 1.5 * span_y if horizontal else span_y > 1.5 * span_x
+                    return intended_axis and visible_axis
                 return span_x > 2 * span_y if horizontal else span_y > 2 * span_x
 
             def lever_tip(row):
@@ -263,21 +288,35 @@ def main():
                 return rejected and snapshot() == before
 
             settle()
-            check("reference diagram starts with mixed pictured valve states", initial_count >= 20
+            check("reference diagram starts with mixed pictured valve states", initial_count >= 23
                   and 0 < initial_open_count < initial_count
                   and f"열림 {initial_open_count}" in app.counts.get()
                   and f"닫힘 {initial_count - initial_open_count}" in app.counts.get())
             with Image.open(reference_path) as reference_image:
                 reference_size = reference_image.size
-                reference_rgb = reference_image.convert("RGB")
+                source_rgb = reference_image.convert("RGB")
+            with Image.open(initial_path) as initial_image:
+                reference_rgb = initial_image.convert("RGB")
             check("reference source image is loaded without modifying its file", app.background.size == reference_size
                   and app.reference_loaded and reference_path.read_bytes() == reference_bytes)
-            check("initial rendered diagram is pixel-identical to the original source", app.rendered_image.size == reference_rgb.size
-                  and app.rendered_image.tobytes() == reference_rgb.tobytes())
+            correction_mask = Image.new("L", reference_size)
+            correction_draw = ImageDraw.Draw(correction_mask)
+            for entry in registration["valves"]:
+                for left, top, right, bottom in entry.get("removed_lever_bounds", []):
+                    # Include the raster's faint JPEG halo around the removed
+                    # grip, as well as its short chrome arm to the fixed hinge.
+                    correction_draw.rectangle((left - 12, top - 8, right + 11, bottom + 15), fill=255)
+                if entry.get("kind") in ("actuator", "wheel"):
+                    left, top, right, bottom = entry["actuator_bounds"]
+                    correction_draw.rectangle((left, top, right - 1, bottom - 1), fill=255)
+            source_outside_corrections = Image.composite(source_rgb, reference_rgb, correction_mask)
+            check("initial rendered diagram matches the corrected single-lever reference", app.rendered_image.size == reference_rgb.size
+                  and app.rendered_image.tobytes() == reference_rgb.tobytes()
+                  and source_outside_corrections.tobytes() == source_rgb.tobytes())
             check("normal canvas contains only the rendered diagram image", only_picture())
             source_width, source_height = registration["image_size"]
             registered_ids = {entry["id"] for entry in registration["valves"]}
-            body_proof = len(registered_ids) == 20 and registered_ids == {row["id"] for row in app.valves}
+            body_proof = len(registered_ids) >= 23 and registered_ids == {row["id"] for row in app.valves}
             for geometry in ("1080x760", "1440x950"):
                 app.geometry(geometry)
                 settle()
@@ -297,22 +336,127 @@ def main():
                     if {v["id"]: v["opened"] for v in app.valves} != before_states:
                         raise AssertionError(f"Independent source body second click failed for {entry['id']} at {geometry}")
                     if app.rendered_image.tobytes() != reference_rgb.tobytes():
-                        raise AssertionError(f"{entry['id']} body-click cycle does not restore the original source pixels")
+                        raise AssertionError(f"{entry['id']} body-click cycle does not restore the corrected reference pixels")
             check("all registered valve body coordinates toggle only their own valve at minimum and enlarged sizes", body_proof and only_picture())
             n2 = next(entry for entry in registration["valves"] if entry["id"] == "V08")
-            n2_regions = [n2["lever_bounds"], *n2["additional_lever_bounds"]]
-            n2_exact = all(app.rendered_image.crop(box).tobytes() == reference_rgb.crop(box).tobytes() for box in n2_regions)
+            n2_row = valve("V08")
+            n2_closed_shape = lever_matches(n2_row)
+            removed_bounds = n2["removed_lever_bounds"]
+            duplicate_absent = all(not any(is_color(pixel, color) for pixel in app.rendered_image.crop(box).getdata()
+                                           for color in ("red", "green")) for box in removed_bounds)
             before_n2 = {row["id"]: row["opened"] for row in app.valves}
             press(*source_screen(n2["body"]))
-            grouped_changed = all(ImageChops.difference(reference_rgb.crop(box), app.rendered_image.crop(box)).getbbox()
-                                  is not None for box in n2_regions)
+            n2_open_shape = lever_matches(valve("V08"))
+            old_grip_gone = not any(is_color(pixel, "red") for pixel in app.rendered_image.crop(n2["lever_bounds"]).getdata())
             after_n2 = {row["id"]: row["opened"] for row in app.valves}
             expected_n2 = dict(before_n2)
             expected_n2["V08"] = not expected_n2["V08"]
             press(*source_screen(n2["body"]))
-            check("GAS N2 shared grips are one control without a duplicate V21 image", n2_exact and grouped_changed
-                  and after_n2 == expected_n2 and "V21" not in after_n2 and len(app.valves) == 20
+            check("GAS N2 has one lever in both states without a duplicate V21 image", n2_closed_shape and n2_open_shape
+                  and duplicate_absent and old_grip_gone and after_n2 == expected_n2 and "V21" not in after_n2
+                  and len(app.valves) == initial_count
                   and app.rendered_image.tobytes() == reference_rgb.tobytes())
+
+            actuator_proof = True
+            static_entries = [entry for entry in registration["valves"] if entry.get("kind") in ("actuator", "wheel")]
+            for entry in static_entries:
+                box = entry["actuator_bounds"]
+                before_pixels = app.rendered_image.copy()
+                before_crop = before_pixels.crop(box)
+                before_row = copy.deepcopy(valve(entry["id"]))
+                before_states = {row["id"]: row["opened"] for row in app.valves}
+                press(*source_screen(entry["body"]))
+                after_crop = app.rendered_image.crop(box)
+                diff = ImageChops.difference(before_pixels, app.rendered_image).getbbox()
+                expected_states = dict(before_states)
+                expected_states[entry["id"]] = not expected_states[entry["id"]]
+                expected_color = "green" if valve(entry["id"])["opened"] else "red"
+                # Silver and paper are independent source pixels at fixed positions.
+                neutral_preserved = all(new == old for old, new in zip(before_crop.getdata(), after_crop.getdata())
+                                        if max(old) - min(old) <= 4)
+                if entry.get("kind") == "actuator":
+                    body_x, body_y = entry["body"]
+                    body_box = (body_x - 10, body_y - 8, body_x + 11, body_y + 9)
+                    neutral_preserved = neutral_preserved and before_pixels.crop(body_box).tobytes() == app.rendered_image.crop(body_box).tobytes()
+                changed_pixels = [(old, new) for old, new in zip(before_crop.getdata(), after_crop.getdata()) if old != new]
+                colored_change = bool(changed_pixels) and any(is_color(new, expected_color) for _, new in changed_pixels)
+                within_box = diff is not None and box[0] <= diff[0] <= diff[2] <= box[2] and box[1] <= diff[1] <= diff[3] <= box[3]
+                row_preserved = all(valve(entry["id"])[key] == before_row[key] for key in ("x", "y", "axis", "visual"))
+                if entry["id"] == "CV01":
+                    adjacent_grip = next(item["lever_bounds"] for item in registration["valves"] if item["id"] == "V01")
+                    row_preserved = row_preserved and before_pixels.crop(adjacent_grip).tobytes() == app.rendered_image.crop(adjacent_grip).tobytes()
+                actuator_proof = actuator_proof and neutral_preserved and colored_change and within_box and row_preserved \
+                    and {row["id"]: row["opened"] for row in app.valves} == expected_states
+                if not actuator_proof:
+                    raise AssertionError(f"{entry['id']} actuator color, chrome or fixed geometry verification failed")
+                press(*source_screen(entry["body"]))
+                actuator_proof = actuator_proof and app.rendered_image.tobytes() == reference_rgb.tobytes()
+                actuator_face = {"CV01": [715, 168], "AV01": [205, 525], "AV02": [312, 691]}.get(entry["id"])
+                if actuator_face:
+                    press(*source_screen(actuator_face))
+                    actuator_proof = actuator_proof and valve(entry["id"])["opened"] != before_row["opened"]
+                    press(*source_screen(actuator_face))
+                    actuator_proof = actuator_proof and app.rendered_image.tobytes() == reference_rgb.tobytes()
+            check("automatic and control valve actuator clicks change their own color without moving chrome", actuator_proof
+                  and {entry["id"] for entry in static_entries} >= {"CV01", "AV01", "AV02"})
+
+            clean_bytes = app.background.tobytes()
+            clean_rows = copy.deepcopy(app.valves)
+            for entry in registration["valves"]:
+                if entry.get("kind") in ("actuator", "wheel"):
+                    continue
+                row = valve(entry["id"])
+                visual, width, height = row["visual"], *app.background.size
+                artwork = visual["artwork"]
+                with Image.open(io.BytesIO(base64.b64decode(artwork["moving_png"]))) as moving_image:
+                    moving = moving_image.convert("RGBA")
+                left = round((row["x"] + visual["pivot_offset"][0] + artwork["offset"][0]) * width)
+                top = round((row["y"] + visual["pivot_offset"][1] + artwork["offset"][1]) * height)
+                bound_x0, bound_y0, bound_x1, bound_y1 = entry["lever_bounds"]
+                for index, (red, green, blue, alpha) in enumerate(moving.getdata()):
+                    pigment = (green > 60 and green > red * 1.5 and green > blue * 1.5 if artwork["opened"]
+                               else red > 80 and red > green * 1.5 and red > blue * 1.5)
+                    if alpha < 192 or not pigment or max(red, green, blue) - min(red, green, blue) < 60:
+                        continue
+                    x, y = left + index % moving.width, top + index // moving.width
+                    if not (bound_x0 - 2 <= x < bound_x1 + 2 and bound_y0 - 2 <= y < bound_y1 + 2):
+                        raise AssertionError(f"{entry['id']} moving artwork contains pigment outside its reviewed original grip")
+            # Three serial mixed rounds exercise every original picture control,
+            # including adjacent grips, small wheels and the drain beside a leg.
+            for cycle in range(3):
+                order = registration["valves"][cycle:] + registration["valves"][:cycle]
+                for entry in order:
+                    before_pixels = app.rendered_image.copy()
+                    press(*source_screen(entry["body"]))
+                    changed = ImageChops.difference(before_pixels, app.rendered_image).getbbox()
+                    bounds = entry.get("actuator_bounds") or lever_region(valve(entry["id"]))
+                    if changed is None or not (bounds[0] <= changed[0] <= changed[2] <= bounds[2]
+                                               and bounds[1] <= changed[1] <= changed[3] <= bounds[3]):
+                        raise AssertionError(f"{entry['id']} mixed operation altered pixels outside its artwork")
+                    if entry["id"] == "V17":
+                        # x544 is the adjacent white paper edge, where the
+                        # moving lever has a faint antialiased fringe. The
+                        # photographed silver supports begin at x545 here.
+                        leg_below = (545, 889, 592, 921)
+                        recovered_legs = (545, 858, 592, 889)
+                        columns = (548, 552, 556, 560, 568, 572, 576, 580, 584)
+                        if app.rendered_image.crop(leg_below).tobytes() != source_rgb.crop(leg_below).tobytes():
+                            raise AssertionError("The drain lever rotation altered the fixed tank leg")
+                        if app.rendered_image.crop(recovered_legs).tobytes() != app.background.crop(recovered_legs).tobytes():
+                            raise AssertionError("The opened drain lever moved photographed pixels onto the recovered tank legs")
+                        if not all(max(pixel := app.rendered_image.getpixel((x, y))) < 235 and max(pixel) - min(pixel) <= 1
+                                   for x in columns for y in range(858, 889)):
+                            raise AssertionError("The tank legs contain a white band or colored trail after the drain opens")
+                for entry in registration["valves"]:
+                    if entry.get("kind") not in ("actuator", "wheel") and not lever_matches(valve(entry["id"])):
+                        raise AssertionError(f"{entry['id']} lost its pictured lever color or geometry in mixed states")
+                for entry in reversed(order):
+                    press(*source_screen(entry["body"]))
+                if app.background.tobytes() != clean_bytes or app.valves != clean_rows \
+                        or app.rendered_image.tobytes() != reference_rgb.tobytes():
+                    raise AssertionError(f"Mixed round {cycle + 1} left image trails or changed the clean scene")
+            check("repeated mixed valve operations preserve the clean background without image trails", only_picture()
+                  and app.background.tobytes() == clean_bytes and app.rendered_image.tobytes() == reference_rgb.tobytes())
             check("initial pictured lever is green and parallel to its horizontal pipe", lever_matches(valve("V01")))
             capture("implementation_closed.png")
             untouched = app.rendered_image.copy()
@@ -361,6 +505,13 @@ def main():
             check("vertical pictured lever opens green and parallel to vertical pipe", valve("V20")["opened"]
                   and lever_matches(valve("V20")))
             capture("implementation_open.png")
+            app.load_image(reference_path)
+            settle()
+            check("opening the original source image reapplies all reviewed controls and the single N2 lever", app.reference_loaded
+                  and app.valves == clean_rows and app.background.tobytes() == clean_bytes
+                  and app.rendered_image.tobytes() == reference_rgb.tobytes()
+                  and {row["id"] for row in app.valves} == registered_ids
+                  and reference_path.read_bytes() == reference_bytes)
 
             app.editing.set(True)
             target = valve("V01")
@@ -399,6 +550,9 @@ def main():
                   and valve(added_id)["axis"] == "vertical")
             editor_rekeyed = app.selected == added_id and app.tree.exists(added_id) and not app.tree.exists(previous_added_id)
             edited_row = copy.deepcopy(valve(added_id))
+            edited_all_rows = copy.deepcopy(app.valves)
+            edited_render = app.rendered_image.tobytes()
+            edited_background = app.background.tobytes()
             edited_project = temp / "edited-id-description.vcp"
             app.save_project(edited_project)
             app.load_project(edited_project)
@@ -408,6 +562,8 @@ def main():
                   and restored_edit == edited_row and restored_edit["name"] == "검증용 새 밸브 / 사용자 설명"
                   and all(restored_edit[key] == before_properties[key] for key in ("x", "y", "opened"))
                   and restored_edit.get("visual", {}).get("artwork") == before_properties.get("visual", {}).get("artwork")
+                  and app.valves == edited_all_rows and app.rendered_image.tobytes() == edited_render
+                  and app.background.tobytes() == edited_background
                   and app.tree.exists(added_id) and not app.tree.exists(previous_added_id))
             app.selected = added_id
             app.sync()
@@ -551,6 +707,18 @@ def main():
             path = temp / "broken-project.vcp"
             path.write_bytes(b"not a ZIP archive")
             check("corrupt project rejects without losing active project", expect_rejected(path, app.load_project))
+            wrong_moving_size = copy.deepcopy(document)
+            tiny_png = io.BytesIO()
+            Image.new("RGBA", (1, 1), (0, 255, 0, 255)).save(tiny_png, format="PNG")
+            wrong_moving_size["valves"][0]["visual"]["artwork"]["moving_png"] = base64.b64encode(tiny_png.getvalue()).decode("ascii")
+            path = temp / "wrong-moving-image-size.vcp"
+            write_project(path, wrong_moving_size)
+            check("mismatched moving foreground dimensions reject without losing active picture", expect_rejected(path, app.load_project))
+            corrupt_moving = copy.deepcopy(document)
+            corrupt_moving["valves"][0]["visual"]["artwork"]["moving_png"] = "broken foreground PNG"
+            path = temp / "broken-moving-image.vcp"
+            write_project(path, corrupt_moving)
+            check("corrupt moving foreground rejects without losing active picture", expect_rejected(path, app.load_project))
 
             layout = temp / "layout.json"
             app.save_layout(layout)
@@ -643,7 +811,10 @@ def main():
                 "reference_image_size": list(reference_size),
                 "reference_valve_count": initial_count,
                 "reference_open_count": initial_open_count,
-                "registered_body_clicks": {"valves": 20, "window_sizes": ["1080x760", "1440x950"]},
+                "registered_body_clicks": {"valves": len(registered_ids), "window_sizes": ["1080x760", "1440x950"]},
+                "corrected_reference_tested": True,
+                "fixed_geometry_controls_tested": len(static_entries),
+                "mixed_operation_rounds": 3,
             }
             (output / "validation.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"Completed: {len(checks)} meaningful GUI checks passed", flush=True)

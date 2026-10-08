@@ -22,9 +22,9 @@ import zipfile
 
 
 HERE = Path(__file__).resolve().parent
-RELEASE_VERSION = "1.1.1"
+RELEASE_VERSION = "1.1.2"
 ARCHIVE_NAME = f"valve-control-windows-{RELEASE_VERSION}.zip"
-MINIMUM_GUI_CHECKS = 40
+MINIMUM_GUI_CHECKS = 57
 REQUIRED_GUI_PROOFS = {
     "normal canvas contains only the rendered diagram image",
     "horizontal pictured lever closes red and perpendicular on real click",
@@ -32,15 +32,21 @@ REQUIRED_GUI_PROOFS = {
     "vertical pictured lever closes red and perpendicular to vertical pipe",
     "detector imports only elongated pictured levers and preserves source bytes",
     "detected lever rotation removes the original color without a ghost",
-    "initial rendered diagram is pixel-identical to the original source",
+    "initial rendered diagram matches the corrected single-lever reference",
     "all registered valve body coordinates toggle only their own valve at minimum and enlarged sizes",
-    "GAS N2 shared grips are one control without a duplicate V21 image",
+    "GAS N2 has one lever in both states without a duplicate V21 image",
+    "automatic and control valve actuator clicks change their own color without moving chrome",
+    "repeated mixed valve operations preserve the clean background without image trails",
+    "opening the original source image reapplies all reviewed controls and the single N2 lever",
 }
-MINIMUM_SMOKE_CHECKS = 8
+MINIMUM_SMOKE_CHECKS = 11
 REQUIRED_SMOKE_PROOFS = {
-    "initial original artwork is pixel-identical",
-    "all twenty actual source body coordinates click independently",
+    "initial scene matches the corrected single-lever reference",
+    "all registered manual automatic and control valve coordinates click independently",
+    "automatic and control valve actuators turn green and red without rotating their bodies",
     "user ID and description edits preserve geometry and reject duplicate IDs",
+    "GAS N2 is a single red or green lever without a second branch",
+    "repeated mixed operations restore exact scene pixels and leave the clean background unchanged",
 }
 REQUIRED_PILLOW = "12.3.0"
 REQUIRED_PYINSTALLER = "6.22.3"
@@ -227,9 +233,9 @@ def build(args) -> int:
             "Python 설치나 CMD 실행은 필요하지 않습니다.\r\n"
             "처음 시작할 때 단일 EXE가 내장 파일을 준비하므로 잠시 기다리세요.\r\n\r\n"
             "밸브를 클릭하면 초록색(열림), 다시 클릭하면 빨간색(닫힘)이 됩니다.\r\n"
-            "손잡이 색상과 방향이 바뀌며 밸브 본체가 도면 이미지에 표시됩니다.\r\n"
+            "수동 밸브는 손잡이 색상과 방향, 자동·조절 밸브는 구동부 색상으로 상태를 표시합니다.\r\n"
             "공유한 PDF의 GC-1512A 원본 도면과 제목 표기가 기본 화면에 포함되어 있습니다.\r\n"
-            "처음 실행하면 원본 손잡이의 모양과 초기 색상을 유지합니다.\r\n"
+            "원본 도면을 기반으로 표시하며 GAS N2 밸브는 단일 손잡이로 조작합니다.\r\n"
             "다른 도면은 이미지 열기로 적용하고 위치 편집에서 밸브를 맞추세요.\r\n"
             "프로젝트 저장으로 도면, 밸브 위치, 상태를 함께 보관할 수 있습니다.\r\n"
             "현재 기능은 화면에서 상태를 변경하는 시뮬레이션입니다.\r\n\r\n"

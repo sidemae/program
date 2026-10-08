@@ -32,6 +32,31 @@ def _encode_artwork(sprite, source_size, left, top, pivot, opened, axis):
             "opened": bool(opened), "axis": axis}
 
 
+def _grip_component(sprite, opened):
+    """Keep the intended connected grip, excluding pigment from nearby devices."""
+    width, height = sprite.size
+    wanted = 2 if opened else 1
+    candidates = {index for index, (r, g, b, a) in enumerate(sprite.getdata())
+                  if a and _color((r, g, b)) == wanted}
+    largest = []
+    while candidates:
+        first = candidates.pop()
+        component, queue = [first], deque([first])
+        while queue:
+            current = queue.popleft()
+            x, y = current % width, current // width
+            for ny in range(max(0, y - 1), min(height, y + 2)):
+                for nx in range(max(0, x - 1), min(width, x + 2)):
+                    index = ny * width + nx
+                    if index in candidates:
+                        candidates.remove(index)
+                        component.append(index)
+                        queue.append(index)
+        if len(component) > len(largest):
+            largest = component
+    return largest
+
+
 def _source_direction(sprite, artwork, width, height):
     """Direction from the registered pivot to the original coloured grip."""
     offset_x, offset_y = artwork["offset"][0] * width, artwork["offset"][1] * height
@@ -51,6 +76,8 @@ def _source_direction(sprite, artwork, width, height):
 
 
 def _artwork_turn(sprite, artwork, row, width, height):
+    if row.get("visual", {}).get("kind", "lever") in ("actuator", "wheel"):
+        return 0
     changed_state = row["opened"] != artwork["opened"]
     changed_axis = row["axis"] != artwork["axis"]
     if not changed_state and not changed_axis:
@@ -72,20 +99,30 @@ def _posed_artwork(background, row):
     if not artwork:
         return None
     width, height = background.size
-    sprite = _decode_artwork(artwork["png"])
+    kind = row.get("visual", {}).get("kind", "lever")
+    changed_pose = row["opened"] != artwork["opened"] or row["axis"] != artwork["axis"]
+    sprite = _decode_artwork(artwork["moving_png"] if changed_pose and kind == "lever" and artwork.get("moving_png") else artwork["png"])
+    if changed_pose and kind == "lever" and not artwork.get("moving_png"):
+        sprite = _moving_sprite(sprite, artwork["opened"])
     source_size = (max(1, round(artwork["size"][0] * width)),
                    max(1, round(artwork["size"][1] * height)))
     if sprite.size != source_size:
         sprite = sprite.resize(source_size, Image.Resampling.LANCZOS)
-    if row["opened"] != artwork["opened"]:
+    if row["opened"] != artwork["opened"] or kind in ("actuator", "wheel"):
         colored = sprite.copy()
         recolored = []
         for r, g, b, a in sprite.getdata():
-            source_channel, opposite = (g, r) if artwork["opened"] else (r, g)
-            # Swap the original grip channels, including faint antialiasing.
-            # Neutral chrome, highlights and paper retain their exact shades.
-            if a and source_channel - opposite >= 4 and source_channel - b >= 4:
-                r, g = g, r
+            if kind in ("actuator", "wheel"):
+                maximum, minimum = max(r, g, b), min(r, g, b)
+                if a and maximum - minimum >= 10:
+                    chroma = maximum - minimum
+                    r, g, b = ((minimum, maximum, round(minimum + chroma * .08)) if row["opened"]
+                               else (maximum, round(minimum + chroma * .08), round(minimum + chroma * .05)))
+            else:
+                source_channel, opposite = (g, r) if artwork["opened"] else (r, g)
+                # Neutral chrome remains gray; original pigment shading is kept.
+                if a and source_channel - opposite >= 4 and source_channel - b >= 4:
+                    r, g = g, r
             recolored.append((r, g, b, a))
         colored.putdata(recolored)
     else:
@@ -103,7 +140,75 @@ def _posed_artwork(background, row):
     elif quarter == 2:
         left, top = px * 2 - left - sprite.width, py * 2 - top - sprite.height
         colored = colored.transpose(Image.Transpose.ROTATE_180)
-    return colored, round(left), round(top)
+    left, top = round(left), round(top)
+    if changed_pose and kind == "lever":
+        # Fixed equipment is in front of a lever that swings behind it. Never
+        # paint a changed grip over another valve, pipe, joint or support leg.
+        colored = colored.copy()
+        output, fixed = colored.load(), _equipment_mask(background).load()
+        for y in range(colored.height):
+            for x in range(colored.width):
+                wx, wy = left + x, top + y
+                if not output[x, y][3] or not (0 <= wx < width and 0 <= wy < height):
+                    continue
+                if fixed[wx, wy]:
+                    r, g, b, _ = output[x, y]
+                    output[x, y] = (r, g, b, 0)
+    return colored, left, top
+
+
+def _equipment_mask(background):
+    cached = getattr(background, "_valve_equipment_mask", None)
+    if cached is not None and cached.size == background.size:
+        return cached
+    mask = Image.new("L", background.size)
+    mask.putdata([255 if max(pixel) - min(pixel) <= 40 and 20 <= max(pixel) <= 230 else 0
+                  for pixel in background.convert("RGB").getdata()])
+    # Chrome's white highlight is enclosed by darker metal. Closing small
+    # interior holes protects that highlight just like the rest of the body;
+    # it does not turn surrounding white paper into a solid equipment rectangle.
+    mask = mask.filter(ImageFilter.MaxFilter(9)).filter(ImageFilter.MinFilter(9))
+    background._valve_equipment_mask = mask
+    return mask
+
+
+def _moving_sprite(sprite, opened, arm=None):
+    """Remove photographed paper and unrelated hardware from a moving grip."""
+    primary = 1 if opened else 0
+    color = Image.new("L", sprite.size)
+    colors = color.load()
+    pixels = sprite.load()
+    for index in _grip_component(sprite, opened):
+        colors[index % sprite.width, index // sprite.width] = 255
+    strong = color.copy()
+    edge = strong.filter(ImageFilter.MaxFilter(7))
+    inner = strong.filter(ImageFilter.MinFilter(5))
+    outline = strong.filter(ImageFilter.MaxFilter(3))
+    box = strong.getbbox()
+    result = Image.new("RGBA", sprite.size)
+    output, near, core, rim = result.load(), edge.load(), inner.load(), outline.load()
+    arm_pixels = arm.load() if arm else None
+    for y in range(sprite.height):
+        for x in range(sprite.width):
+            r, g, b, original_alpha = pixels[x, y]
+            if not original_alpha:
+                continue
+            rgb = (r, g, b)
+            pigment = near[x, y] and rgb[primary] >= max(rgb) and rgb[primary] - min(rgb) >= 5
+            gray_edge = (box and box[0] - 1 <= x <= box[2] and box[1] - 1 <= y <= box[3]
+                         and rim[x, y] and max(rgb) - min(rgb) <= 25 and min(rgb) <= 180)
+            mechanical = arm_pixels and arm_pixels[x, y]
+            if not (pigment or gray_edge or mechanical):
+                continue
+            alpha = original_alpha
+            if not core[x, y] and min(rgb) >= 160:
+                # Unmatte an antialiased outer edge photographed on white paper.
+                # Interior glossy highlights remain opaque and retain shading.
+                alpha = max(1, round(original_alpha * (255 - min(rgb)) / 255))
+                opacity = alpha / 255
+                rgb = tuple(max(0, min(255, round((channel - 255 * (1 - opacity)) / opacity))) for channel in rgb)
+            output[x, y] = (*rgb, alpha)
+    return result
 
 
 def _locate_original_sprite(original, artwork, predicted):
@@ -154,12 +259,17 @@ def register_artwork(background, original, row):
     artwork = row.get("visual", {}).get("artwork")
     if not artwork:
         raise ValueError("Register a detected valve with existing source artwork.")
+    if hasattr(background, "_valve_equipment_mask"):
+        del background._valve_equipment_mask
     _, _, px, py, _, _, _, _, _ = _geometry(background, row)
     predicted = (px + artwork["offset"][0] * original.width,
                  py + artwork["offset"][1] * original.height)
     sprite, left, top = _locate_original_sprite(original, artwork, predicted)
-    sprite, left, top = _capture_arm(background, original, row, sprite, left, top, (px, py))
+    sprite, left, top, moving = _capture_arm(background, original, row, sprite, left, top, (px, py))
     row["visual"]["artwork"] = _encode_artwork(sprite, original.size, left, top, (px, py), row["opened"], row["axis"])
+    buffer = io.BytesIO()
+    moving.save(buffer, format="PNG")
+    row["visual"]["artwork"]["moving_png"] = base64.b64encode(buffer.getvalue()).decode("ascii")
     return row
 
 
@@ -167,57 +277,77 @@ def _capture_arm(background, original, row, sprite, left, top, pivot):
     width, height = original.size
     px, py = pivot
     grip = [(left + index % sprite.width, top + index // sprite.width)
-            for index, (r, g, b, a) in enumerate(sprite.getdata())
-            if a and max(r, g, b) - min(r, g, b) >= 35
-            and (g >= max(r, b) if row["opened"] else r >= max(g, b))]
+            for index in _grip_component(sprite, row["opened"])]
     if not grip:
-        return sprite, left, top
-    endpoint = min(grip, key=lambda point: (point[0] - px) ** 2 + (point[1] - py) ** 2)
+        return sprite, left, top, _moving_sprite(sprite, row["opened"])
+    gx0, gy0 = min(x for x, _ in grip), min(y for _, y in grip)
+    gx1, gy1 = max(x for x, _ in grip), max(y for _, y in grip)
+    horizontal_grip = gx1 - gx0 >= gy1 - gy0
+    endpoint = ((gx0 if abs(gx0 - px) <= abs(gx1 - px) else gx1, (gy0 + gy1) / 2)
+                if horizontal_grip else ((gx0 + gx1) / 2, gy0 if abs(gy0 - py) <= abs(gy1 - py) else gy1))
     distance = math.hypot(endpoint[0] - px, endpoint[1] - py)
-    if distance < 3 or distance > width * .04:
-        return sprite, left, top
     alpha = Image.new("L", original.size)
     alpha.paste(sprite.getchannel("A"), (left, top))
+    color = Image.new("L", original.size)
+    color_pixels = color.load()
+    for x, y in grip:
+        color_pixels[x, y] = 255
+    grip_edge = color.filter(ImageFilter.MaxFilter(7))
+    # Include weak JPEG colour fringes around the whole original grip.
+    silhouette = color.filter(ImageFilter.MaxFilter(17))
     arm = Image.new("L", original.size)
-    ImageDraw.Draw(arm).line((endpoint[0], endpoint[1], px, py), fill=255, width=max(3, round(width * .005)))
-    box = arm.getbbox()
+    if 3 <= distance <= width * .04:
+        ImageDraw.Draw(arm).line((endpoint[0], endpoint[1], px, py), fill=255, width=max(9, round(width * .0075)))
+    region = ImageChops.lighter(ImageChops.lighter(silhouette, arm), alpha)
+    box = region.getbbox()
     if box is None:
-        return sprite, left, top
+        return sprite, left, top, _moving_sprite(sprite, row["opened"])
     source = original.convert("RGB").load()
-    output, mask, path = background.load(), alpha.load(), arm.load()
+    output, mask, path, scope = background.load(), alpha.load(), arm.load(), region.load()
+    own_edge = grip_edge.load()
+    moving_arm = Image.new("L", original.size)
+    arm_pixels = moving_arm.load()
     cx, cy, _, _, _, _, _, (body_x, body_y), _ = _geometry(background, row)
-    fixed_radius = max(3., width * .0025)
+    fixed_radius = max(9., width * .006)
     for y in range(box[1], box[3]):
         for x in range(box[0], box[2]):
-            if not path[x, y] or mask[x, y]:
-                continue
-            if math.hypot(x - px, y - py) <= fixed_radius:
-                continue
-            if abs(x - cx) <= body_x and abs(y - cy) <= body_y:
+            if not scope[x, y]:
                 continue
             pixel = source[x, y]
-            if max(pixel) - min(pixel) > 42 or min(pixel) >= 232:
+            painted = max(pixel) - min(pixel) >= 10 and pixel[1 if row["opened"] else 0] >= max(pixel)
+            if not own_edge[x, y] and not path[x, y] and _color(pixel):
+                # A separately registered neighboring grip may already have
+                # been removed. Do not put its source pigment back on paper.
+                mask[x, y] = 0
                 continue
-            samples = []
-            for radius in (6, 9, 13):
-                for dx, dy in ((radius, 0), (-radius, 0), (0, radius), (0, -radius),
-                               (radius, radius), (-radius, -radius)):
-                    sx, sy = x + dx, y + dy
-                    if 0 <= sx < width and 0 <= sy < height and not path[sx, sy] and not mask[sx, sy]:
-                        sample = source[sx, sy]
-                        if min(sample) >= 222 and max(sample) - min(sample) <= 25:
-                            samples.append(sample)
-                if samples:
-                    break
-            if samples:
-                replacement = tuple(round(sum(sample[k] for sample in samples) / len(samples)) for k in range(3))
-                if replacement != pixel:
-                    output[x, y] = replacement
-                    mask[x, y] = 255
+            if not own_edge[x, y] and not path[x, y] and max(pixel) - min(pixel) <= 35 and max(pixel) <= 230:
+                # Wide colour-fringe repair must not erase stationary hardware
+                # or capture a second nearby control into this valve's sprite.
+                output[x, y] = pixel
+                mask[x, y] = 0
+                continue
+            fixed_joint = math.hypot(x - px, y - py) <= fixed_radius
+            fixed_body = abs(x - cx) <= body_x and abs(y - cy) <= body_y
+            if (fixed_joint or fixed_body) and not painted:
+                # Repair earlier mask dilation over chrome body/joint pixels.
+                output[x, y] = pixel
+                mask[x, y] = 0
+                continue
+            # The registered lever/arm corridor is on paper. Clear it as one
+            # complete silhouette, including pale highlights and JPEG fringes.
+            # Source-specific occluded machinery (such as the drain support
+            # legs) is reconstructed by the reviewed reference preparation.
+            output[x, y] = (255, 255, 255)
+            mask[x, y] = 255 if pixel != (255, 255, 255) else 0
+            if path[x, y] and max(pixel) - min(pixel) <= 50 and max(pixel) <= 248 and not fixed_joint:
+                arm_pixels[x, y] = mask[x, y]
     box = alpha.getbbox()
+    if box is None:
+        return sprite, left, top, _moving_sprite(sprite, row["opened"])
     result = original.crop(box).convert("RGBA")
     result.putalpha(alpha.crop(box))
-    return result, box[0], box[1]
+    moving = _moving_sprite(result, row["opened"], moving_arm.crop(box))
+    return result, box[0], box[1], moving
 
 
 def merge_artwork(background, row, extra_row):
@@ -292,8 +422,15 @@ def valve_hit(background, row, x, y):
     """Hit only the body, spindle or lever, including a small click tolerance."""
     cx, cy, px, py, ex, ey, thickness, (bx, by), _ = _geometry(background, row)
     tolerance = max(3., background.width * .002)
+    kind = row.get("visual", {}).get("kind", "lever")
     body = abs(x - cx) <= bx + tolerance and abs(y - cy) <= by + tolerance
-    spindle = _near_segment(x, y, cx, cy, px, py, max(3., thickness * .4) + tolerance)
+    if kind == "wheel" and row.get("visual", {}).get("artwork"):
+        artwork = row["visual"]["artwork"]
+        radius = max(3., min(artwork["size"][0] * background.width, artwork["size"][1] * background.height) / 2)
+        body = (x - cx) ** 2 + (y - cy) ** 2 <= (radius + tolerance) ** 2
+    spindle_radius = (max(2., background.width / 1600 * 2.5) if kind in ("actuator", "wheel")
+                      else max(3., thickness * .4))
+    spindle = _near_segment(x, y, cx, cy, px, py, spindle_radius + tolerance)
     posed = _posed_artwork(background, row)
     if posed:
         sprite, left, top = posed
@@ -374,7 +511,7 @@ def render_scene(background, rows):
             stem_width = max(2, round(thickness * .5))
             draw.line((cx, cy, px, py), fill="#465355", width=stem_width + 2)
             draw.line((cx, cy, px, py), fill="#ccd3d4", width=stem_width)
-        posed = _posed_artwork(image, row)
+        posed = _posed_artwork(background, row)
         if posed:
             sprite, left, top = posed
             image.paste(sprite, (left, top), sprite)

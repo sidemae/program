@@ -3,10 +3,12 @@
   "checks": [
     "reference diagram starts with mixed pictured valve states",
     "reference source image is loaded without modifying its file",
-    "initial rendered diagram is pixel-identical to the original source",
+    "initial rendered diagram matches the corrected single-lever reference",
     "normal canvas contains only the rendered diagram image",
     "all registered valve body coordinates toggle only their own valve at minimum and enlarged sizes",
-    "GAS N2 shared grips are one control without a duplicate V21 image",
+    "GAS N2 has one lever in both states without a duplicate V21 image",
+    "automatic and control valve actuator clicks change their own color without moving chrome",
+    "repeated mixed valve operations preserve the clean background without image trails",
     "initial pictured lever is green and parallel to its horizontal pipe",
     "horizontal pictured lever closes red and perpendicular on real click",
     "click redraw changes only the selected pictured valve region",
@@ -19,6 +21,7 @@
     "minimum-size resize preserves pictured lever click alignment",
     "vertical pictured lever closes red and perpendicular to vertical pipe",
     "vertical pictured lever opens green and parallel to vertical pipe",
+    "opening the original source image reapplies all reviewed controls and the single N2 lever",
     "editing drag changes position without changing state",
     "editing drag never places valve outside image",
     "real canvas add creates one selected valve",
@@ -40,6 +43,8 @@
     "missing embedded image rejects without losing active project",
     "corrupt embedded image rejects without losing active project",
     "corrupt project rejects without losing active project",
+    "mismatched moving foreground dimensions reject without losing active picture",
+    "corrupt moving foreground rejects without losing active picture",
     "layout export preserves positions but starts all valves closed",
     "invalid layout rejects without losing active project",
     "enormous integer coordinate rejects without overflow or state loss",
@@ -57,7 +62,7 @@
     "canvas add recovers from a zero-valve layout",
     "all GUI callbacks completed without exceptions"
   ],
-  "count": 55,
+  "count": 60,
   "python": "3.13.5",
   "pillow": "12.3.0",
   "tk": "8.6.16",
@@ -70,13 +75,16 @@
     1670,
     942
   ],
-  "reference_valve_count": 20,
-  "reference_open_count": 12,
+  "reference_valve_count": 29,
+  "reference_open_count": 14,
   "registered_body_clicks": {
-    "valves": 20,
+    "valves": 29,
     "window_sizes": [
       "1080x760",
       "1440x950"
     ]
-  }
+  },
+  "corrected_reference_tested": true,
+  "fixed_geometry_controls_tested": 9,
+  "mixed_operation_rounds": 3
 }
