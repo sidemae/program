@@ -1,0 +1,123 @@
+name: Build tested Windows executable
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - delivery/valve-control-1.0
+    paths:
+      - .github/workflows/windows-exe.yml
+      - valve-control/*.py
+      - valve-control/requirements.txt
+      - valve-control/run_windows.cmd
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-executable-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      BUILD_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Check out the authorized delivery branch
+        id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install Python 3.13 (64-bit)
+        id: python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+          architecture: x64
+
+      - name: Install the pinned release dependencies
+        id: dependencies
+        shell: pwsh
+        run: >-
+          python -m pip install --disable-pip-version-check --only-binary=:all:
+          Pillow==12.3.0 PyInstaller==6.22.3
+
+      - name: Test GUI and CMD, build EXE, test EXE, and create ZIP
+        id: build
+        shell: pwsh
+        run: >-
+          python valve-control/build_windows.py
+          --output-directory .windows-release
+          --source-sha "$env:GITHUB_SHA"
+          --run-url "$env:BUILD_RUN_URL"
+
+      - name: Preserve a build report even when installation or tests fail
+        if: always() && steps.checkout.outcome == 'success'
+        shell: pwsh
+        run: >-
+          python valve-control/build_windows.py
+          --status-only
+          --output-directory .windows-release
+          --source-sha "$env:GITHUB_SHA"
+          --run-url "$env:BUILD_RUN_URL"
+          --dependency-outcome "${{ steps.dependencies.outcome }}"
+          --build-outcome "${{ steps.build.outcome }}"
+
+      - name: Keep a downloadable backup of the native Windows results
+        if: always() && steps.checkout.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: valve-control-windows-1.0.1
+          path: |
+            .windows-release/valve-control-windows-1.0.1.zip
+            .windows-release/windows-build.json
+            .windows-release/validation.json
+            valve-control/artifacts/validation.json
+            valve-control/artifacts/implementation_closed.png
+            valve-control/artifacts/implementation_open.png
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 30
+
+      - name: Publish the validated ZIP and report on the delivery branch
+        if: always() && steps.checkout.outcome == 'success' && github.ref == 'refs/heads/delivery/valve-control-1.0'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $report = '.windows-release/windows-build.json'
+          if (-not (Test-Path $report)) {
+            throw 'No build report was generated; refusing an unverified publication.'
+          }
+          $result = Get-Content -Raw -Encoding UTF8 $report | ConvertFrom-Json
+          $statusSource = Join-Path $env:RUNNER_TEMP 'windows-build-to-publish.json'
+          Copy-Item -LiteralPath $report -Destination $statusSource
+          $zipSource = Join-Path $env:RUNNER_TEMP 'valve-control-windows-1.0.1.zip'
+          if ($result.status -eq 'passed') {
+            Copy-Item -LiteralPath '.windows-release/valve-control-windows-1.0.1.zip' -Destination $zipSource
+          }
+          # Restore only CI-generated changes to tracked source screenshots. The
+          # developer's commit is already preserved by checkout and the report.
+          git restore --worktree -- valve-control/artifacts
+          if ($LASTEXITCODE -ne 0) { throw 'Could not restore generated GUI outputs.' }
+          git fetch origin 'delivery/valve-control-1.0'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not fetch the delivery branch.' }
+          git merge --ff-only FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'The branch advanced incompatibly; refusing to replace it.' }
+          Copy-Item -LiteralPath $statusSource -Destination 'windows-build.json'
+          git add -- windows-build.json
+          if ($result.status -eq 'passed') {
+            Copy-Item -LiteralPath $zipSource -Destination 'valve-control-windows-1.0.1.zip'
+            git add -- valve-control-windows-1.0.1.zip
+          }
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) { exit 0 }
+          if ($LASTEXITCODE -ne 1) { throw 'Could not inspect generated release changes.' }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Publish Windows 1.0.1 build report and validated executable'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not commit the release results.' }
+          git push origin 'HEAD:refs/heads/delivery/valve-control-1.0'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not push the release results.' }

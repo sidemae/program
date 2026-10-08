@@ -8,6 +8,7 @@ import platform
 import select
 import shutil
 import subprocess
+import sys
 import tempfile
 import traceback
 import zipfile
@@ -26,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 
 def start_display():
     """Use the current display, or own a temporary isolated Xvfb display."""
-    if os.environ.get("DISPLAY"):
+    if sys.platform == "win32" or os.environ.get("DISPLAY"):
         return None
     executable = shutil.which("Xvfb") or "/workspace/.cloud-setup/root/usr/bin/Xvfb"
     if not Path(executable).exists():

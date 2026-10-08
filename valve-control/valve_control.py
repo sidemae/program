@@ -8,7 +8,9 @@ import io
 import json
 import math
 import os
+import platform
 from pathlib import Path
+import sys
 import tempfile
 import tkinter as tk
 from tkinter import filedialog, font as tkfont, messagebox, ttk
@@ -503,11 +505,65 @@ class App(tk.Tk):
             return False
 
 
+def run_smoke(app, path):
+    """배포 빌드의 실제 GUI·이미지·프로젝트 동작을 검증한다."""
+    checks = []
+    try:
+        app.update()
+        app.draw()
+        assert len(app.valves) == 20 and not any(v["opened"] for v in app.valves)
+        checks.append("default image and closed valves")
+        v = app.valves[0]
+        x, y = app.screen(v)
+        for opened, color in ((True, GREEN), (False, RED)):
+            app.canvas.event_generate("<ButtonPress-1>", x=round(x), y=round(y))
+            app.canvas.event_generate("<ButtonRelease-1>", x=round(x), y=round(y))
+            app.update()
+            app.draw()
+            assert v["opened"] is opened
+            marker = app.canvas.find_withtag(v["id"])[0]
+            assert app.canvas.itemcget(marker, "fill") == color
+            checks.append("click opens green" if opened else "click closes red")
+        with tempfile.TemporaryDirectory(prefix="valve-smoke-") as folder:
+            image = Path(folder) / "image.png"
+            rgba = Image.new("RGBA", (240, 180), (0, 0, 0, 0))
+            rgba.putpixel((10, 10), (22, 163, 74, 255))
+            rgba.save(image)
+            app.load_image(image)
+            assert app.background.getpixel((0, 0)) == (255, 255, 255)
+            assert app.background.getpixel((10, 10)) == (22, 163, 74)
+            checks.append("Pillow PNG decoding and transparency")
+            app.toggle(v["id"])
+            expected = deepcopy(app.valves)
+            pixels = app.background.tobytes()
+            project = Path(folder) / "project.vcp"
+            app.save_project(project)
+            app.valves = []
+            app.load_project(project)
+            assert app.valves == expected and app.background.tobytes() == pixels
+            checks.append("embedded image and state project roundtrip")
+        result = dict(status="passed", checks=checks, count=len(checks),
+                      platform=platform.system(), python=platform.python_version(),
+                      tk=app.tk.call("package", "require", "Tk"),
+                      frozen=bool(getattr(sys, "frozen", False)))
+        atomic_write(path, lambda p: p.write_text(json.dumps(result, indent=2), encoding="utf-8"))
+        return 0
+    except Exception as exc:
+        result = dict(status="failed", checks=checks, count=len(checks),
+                      platform=platform.system(), frozen=bool(getattr(sys, "frozen", False)),
+                      error=f"{type(exc).__name__}: {exc}")
+        atomic_write(path, lambda p: p.write_text(json.dumps(result, indent=2), encoding="utf-8"))
+        return 1
+    finally:
+        app.destroy()
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--image", type=Path)
     p.add_argument("--layout", type=Path)
     p.add_argument("--project", type=Path)
+    p.add_argument("--smoke-test", type=Path, help=argparse.SUPPRESS)
     a = p.parse_args()
     if a.project and (a.image or a.layout):
         p.error("--project는 --image/--layout과 함께 사용하지 않습니다.")
@@ -521,12 +577,23 @@ def main():
                 app.load_image(a.image)
             if a.layout:
                 app.load_layout(a.layout)
-        app.mainloop()
+        if a.smoke_test:
+            result = run_smoke(app, a.smoke_test)
+            app = None
+            return result
+        else:
+            app.mainloop()
     except (tk.TclError, OSError, ValueError, TypeError, KeyError, zipfile.BadZipFile, Image.DecompressionBombError, NotImplementedError, RuntimeError) as exc:
         if app is not None:
             app.destroy()
+        if a.smoke_test:
+            error = dict(status="failed", platform=platform.system(),
+                         frozen=bool(getattr(sys, "frozen", False)),
+                         error=f"{type(exc).__name__}: {exc}")
+            atomic_write(a.smoke_test, lambda path: path.write_text(json.dumps(error), encoding="utf-8"))
+            return 1
         p.exit(1, f"실행 오류: {exc}\n")
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -1,8 +1,12 @@
-# 밸브 모식 제어 1.0
+# 밸브 모식 제어 1.0.1
 
 승인된 컨셉에 따라 Python으로 구현한 독립 실행 프로그램입니다. 이미지를 배경 레이어로 표시하고, 밸브를 클릭하면 초록색(열림), 다시 클릭하면 빨간색(닫힘)으로 전환합니다.
 
 ## Windows 실행
+
+Windows 실행 파일 ZIP은 저장소의 [다운로드 안내](https://github.com/sidemae/program/blob/delivery/valve-control-1.0/README.md)에서 받습니다. 모두 압축 해제한 뒤 `ValveControl.exe`를 더블 클릭하면 됩니다. Python 설치가 필요하지 않습니다.
+
+다음은 Python 소스 ZIP 실행 방법입니다.
 
 Python 3.11 이상을 설치한 뒤 ZIP을 압축 해제하고 `run_windows.cmd`를 실행합니다. 이 스크립트는 이 폴더에 `.venv`를 만들고 Pillow를 설치한 뒤 프로그램을 시작합니다. 최초 설치에는 PyPI 접속이 필요합니다.
 
@@ -14,7 +18,7 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe valve_control.py
 ```
 
-Python의 Tkinter가 필요하며 공식 Windows Python 설치본에는 포함됩니다. Windows 실행 자체는 아직 검증하지 않았습니다.
+Python의 Tkinter가 필요하며 공식 Windows Python 설치본에는 포함됩니다. 1.0.1에서는 CMD 실행 도구를 ASCII·CRLF 형식으로 수정했습니다. Windows용 빌드와 CMD·EXE 실행 검증 결과는 저장소의 `windows-build.json`에 기록됩니다. 검증에 통과한 ZIP만 게시합니다.
 
 ## Linux / macOS 실행
 
@@ -72,6 +76,7 @@ XDG_CACHE_HOME=/workspace/.cloud-setup/cache /workspace/.cloud-setup/gui-venv/bi
 - `requirements.txt`: Pillow 버전 고정.
 - `run_windows.cmd`, `run.sh`: 실행 도구.
 - `verify_gui.py`: 실제 GUI 검증.
+- `build_windows.py`: Windows에서 CMD·EXE 검증 후 실행 파일 ZIP 생성. 저장소의 GitHub Actions에서 실행합니다.
 - `artifacts/`: 검증 결과와 실행 화면.
 
 작성일: 2026-10-08. 기존 `campus-mod` 프로젝트는 수정하지 않았습니다.
