@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "version": "1.0.1",
+  "source_commit": "cc7d4cb7b5add9b3ea9ffc55e6022f91c32381ff",
+  "run_url": "https://github.com/sidemae/program/actions/runs/37716829801",
+  "runner": {
+    "platform": "Windows",
+    "architecture": "AMD64",
+    "python": "3.13.15"
+  },
+  "phases": {
+    "dependencies": {
+      "status": "passed",
+      "pillow": "12.3.0",
+      "pyinstaller": "6.22.3"
+    },
+    "gui": {
+      "status": "passed",
+      "count": 40
+    },
+    "launcher": {
+      "status": "passed",
+      "checks": [
+        "default image and closed valves",
+        "click opens green",
+        "click closes red",
+        "Pillow PNG decoding and transparency",
+        "embedded image and state project roundtrip"
+      ]
+    },
+    "build": {
+      "status": "passed",
+      "name": "ValveControl.exe",
+      "bytes": 20129501,
+      "sha256": "526aff927b184d7c6fbd82cd6f7b25f076ab7675bd493817571cb373e24948e9"
+    },
+    "exe_smoke": {
+      "status": "passed",
+      "checks": [
+        "default image and closed valves",
+        "click opens green",
+        "click closes red",
+        "Pillow PNG decoding and transparency",
+        "embedded image and state project roundtrip"
+      ],
+      "unicode_path": true,
+      "space_in_path": true
+    },
+    "package": {
+      "status": "passed",
+      "name": "valve-control-windows-1.0.1.zip",
+      "bytes": 19863074,
+      "sha256": "9b446f10249e2b7e76f320fcc25d171140c150d51fc93fe50d59229c4349de64"
+    }
+  },
+  "archive": {
+    "name": "valve-control-windows-1.0.1.zip",
+    "bytes": 19863074,
+    "sha256": "9b446f10249e2b7e76f320fcc25d171140c150d51fc93fe50d59229c4349de64"
+  },
+  "completed_at_utc": "2026-10-08T02:14:44.565266+00:00",
+  "workflow_steps": {
+    "dependencies": "success",
+    "build": "success"
+  }
+}
