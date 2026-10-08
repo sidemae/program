@@ -8,7 +8,10 @@
 
 Windows 10/11 64비트에서 ZIP을 모두 압축 해제하고 **ValveControl.exe**를 더블 클릭하세요. Python 설치나 CMD 실행이 필요하지 않습니다. 최초 시작 시 내장 파일을 준비하므로 잠시 기다리세요.
 
-Windows 빌드에서 실제 GUI 40개 검사, 수정한 CMD 실행 검사, 한글·공백 경로의 EXE 실행 검사와 ZIP 무결성을 확인합니다. 검증에 통과한 실행 파일만 게시하며 [빌드 결과](windows-build.json)에 상태·검증 항목·SHA256·빌드 주소를 기록합니다. 빌드 진행 상태는 [GitHub Actions](https://github.com/sidemae/program/actions)에서 볼 수 있습니다.
+실제 Windows 64비트 빌드에서 GUI 40개, CMD 실행 5개, 한글·공백 경로의 독립 EXE 실행 5개 검사를 모두 통과했습니다. 게시된 ZIP을 다시 다운로드하여 무결성과 검증된 EXE의 일치도 확인했습니다. [빌드 결과](windows-build.json), [Windows 실행 기록](https://github.com/sidemae/program/actions/runs/37716829801)을 볼 수 있습니다.
+
+- ZIP 크기: 19,863,074바이트 (약 19MB)
+- SHA256: `9b446f10249e2b7e76f320fcc25d171140c150d51fc93fe50d59229c4349de64`
 
 ## Python 소스
 
